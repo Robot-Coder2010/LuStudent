@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Photo Challenge | Latter UP</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/favicon.png" type="image/png"><link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chewy&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="editorial.css"><script>try{document.documentElement.dataset.theme=localStorage.getItem("lu-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){document.documentElement.dataset.theme="light"}</script>
+</head>
+<body>
+<main id="main">
+
+  <section class="page-hero photo-style-hero">
+    <div class="wrap photo-style-hero-inner">
+      <div class="photo-hero-icon pub-mark" aria-hidden="true"><img class="pub-mark-img" src="assets/favicon.svg" alt="Latter UP" width="72" height="72"></div>
+      <p class="eyebrow">Latter UP / Student community</p>
+      <h1 class="page-title">Photo Challenge</h1>
+      <p class="photo-hero-lede">Share a photo for this round, no sign-in needed. We look over every photo before it is shared with everyone.</p>
+    </div>
+  </section>
+
+  <section class="photo-style-content">
+    <div class="wrap"><div class="photo-page adm" id="app">
+<section id="current" class="photo-current"><p>Loading this round…</p></section>
+<section class="photo-past-section"><div class="photo-section-heading"><div><p class="eyebrow">The gallery</p><h2>Past themes</h2><p>Revisit the moments and memories from previous rounds.</p></div></div><div id="past" class="theme-grid"></div></section>
+<section id="viewer" class="viewer" hidden></section>
+</div></div>
+  </section>
+
+</main>
+
+<footer class="site-footer"><div class="wrap"><p class="pub-foot">© <span id="year"></span> Latter UP</p></div></footer>
+<script>document.getElementById("year").textContent=new Date().getFullYear()</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="icons.js"></script><script>window.LU_PUBLIC = true;</script>
+<script src="reel-music.js"></script>
+<script src="photos.js"></script></body></html>

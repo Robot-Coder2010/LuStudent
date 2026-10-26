@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Latter UP | Student Portal</title>
+<meta name="description" content="Student portal for Latter UP, an online LDS-based co-op. Find quick links to Google Chat, email, Google Classroom, and answers to common questions.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chewy&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="editorial.css">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("lu-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){document.documentElement.dataset.theme="light"}</script>
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div id="site-header"></div>
+<div id="portal-announcement-banner" class="portal-announcement-banner" hidden></div>
+
+<main id="main">
+
+  <section class="hero" id="top">
+    <div class="wrap hero-inner">
+      <p class="eyebrow">Welcome back</p>
+      <h1>Everything you need, <br> gathered in <span class="hl">one place.</span></h1>
+      <p class="hero-lede">Jump into Chat, Classroom, your calendar or Drive, or keep scrolling for announcements, videos and answers.</p>
+      <nav class="hero-index" aria-label="On this page"><a href="#links"><span>01</span>Tools</a><a href="#announcements"><span>02</span>Announcements</a><a href="#videos"><span>03</span>Videos</a><a href="#faq"><span>04</span>Questions</a></nav>
+    </div>
+  </section>
+
+  <section class="links" id="links">
+    <div class="wrap">
+      <h2 class="section-title">Jump into LU</h2>
+      <p class="section-sub">Your main tools for staying connected and on top of classwork.</p>
+
+      <div id="portal-card-grid" class="card-grid" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <section class="announcements" id="announcements">
+    <div class="wrap">
+      <div class="section-head-row">
+        <div>
+          <h2 class="section-title">Latest Announcements</h2>
+          <p class="section-sub">Recent flyers and updates. Click any item to expand it.</p>
+        </div>
+        <a class="view-all-link" href="announcements.html">View all announcements →</a>
+      </div>
+      <div id="announcements-preview-list" class="announcements-list"></div>
+    </div>
+  </section>
+
+  <section class="videos" id="videos">
+    <div class="wrap">
+      <div class="section-head-row">
+        <div>
+          <h2 class="section-title">Latest Videos</h2>
+          <p class="section-sub">Recent videos from Latter UP Student Leadership.</p>
+        </div>
+        <a class="view-all-link" href="videos.html">View all videos →</a>
+      </div>
+      <div id="videos-preview-list" class="video-grid"></div>
+    </div>
+  </section>
+
+  <section class="faq" id="faq">
+    <div class="wrap">
+      <h2 class="section-title">Frequently asked questions</h2>
+      <p class="section-sub">Can't find your answer? Reach out on Chat or by email: studentleadership@latterup.org </p>
+      <div id="faq-list" class="faq-list"></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer" id="contact">
+  <div class="wrap footer-inner">
+    <div class="footer-brand">
+      <span class="brand-name">Latter UP</span>
+      <p>Created by Hunter Creech, assisted by AI.</p>
+    </div>
+    <div class="footer-links">
+      <h3>Contact</h3>
+      <a href="https://mail.google.com/chat" target="_blank" rel="noopener">Google Chat</a>
+      <a href="mailto:studentleadership@latterup.org">studentleadership@latterup.org</a>
+    </div>
+    <div class="footer-links">
+      <h3>Explore</h3>
+      <a href="announcements.html">Announcements</a>
+      <a href="videos.html">Videos</a>
+      <a href="photos.html">Photo Challenge</a>
+    </div>
+  </div>
+  <p class="footer-note">© <span id="year"></span> Latter UP. Made for our students and families.</p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="icons.js"></script>
+<script src="layout.js"></script>
+<script src="auth.js"></script>
+<script src="portal-customization.js"></script>
+</body>
+</html>

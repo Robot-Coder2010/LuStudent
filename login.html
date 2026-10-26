@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex"><title>Sign in | Latter UP</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/favicon.png" type="image/png"><link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chewy&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="editorial.css"><script>try{document.documentElement.dataset.theme=localStorage.getItem("lu-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){document.documentElement.dataset.theme="light"}</script>
+</head>
+<body><div id="site-header"></div>
+<main class="wrap adm" style="max-width:460px">
+<form id="in"><h1>Sign in</h1><p>Use your <strong>@latterup.org</strong> email and password.</p>
+<label>Email<input type="email" name="e" autocomplete="username" required></label>
+<label>Password<input type="password" data-pw name="p" autocomplete="current-password" required></label>
+<label class="chk"><input type="checkbox" class="showpw"> Show password</label>
+<div><button class="auth-btn" type="submit">Sign in</button></div>
+<small>Forgot your password? Message Student Leadership and we'll reset it for you.</small><p class="auth-error" id="e1" hidden></p></form>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script><script src="config.js"></script>
+<script src="icons.js"></script>
+<script src="layout.js"></script>
+<script>
+const sb = window.LUsb || supabase.createClient(LU_CONFIG.url, LU_CONFIG.key), $ = id => document.getElementById(id);
+document.querySelectorAll(".showpw").forEach(c => c.onchange = () => c.closest("form").querySelectorAll("input[data-pw]").forEach(i => i.type = c.checked ? "text" : "password"));
+const err = (id, m) => { $(id).textContent = m; $(id).hidden = false; };
+(async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) location.replace(session.user.user_metadata?.must_change_password ? "change-password.html" : "index.html");
+})();
+$("in").onsubmit = async e => {
+  e.preventDefault(); const f = e.target.elements;
+  const { data, error } = await sb.auth.signInWithPassword({ email: f.e.value.trim(), password: f.p.value });
+  if (error) return err("e1", "That email or password isn't right.");
+  location.replace(data.user.user_metadata?.must_change_password ? "change-password.html" : "index.html");
+};
+</script></body></html>
