@@ -8,7 +8,15 @@ const T = {
 };
 let cur = "announcements", ROLE = "student";
 const loc = v => { const d = new Date(v); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16); };
-const ytId = v => (v.match(/(?:v=|youtu\.be\/|shorts\/|embed\/)([\w-]{11})/) || [, v.trim()])[1];
+const isValidTimeZone = value => {
+  try { new Intl.DateTimeFormat("en-US", { timeZone: value }).format(); return true; }
+  catch { return false; }
+};
+const ytId = v => {
+  const value = v.trim();
+  const id = (value.match(/(?:v=|youtu\.be\/|shorts\/|embed\/|live\/)([\w-]{11})(?:[?&#/]|$)/) || [, value])[1];
+  return /^[\w-]{11}$/.test(id) ? id : null;
+};
 
 async function boot() {
   const { data: { session } } = await sb.auth.getSession();
@@ -43,11 +51,13 @@ async function show(editRow) {
 let LT = "announcements";
 async function listUI(table, host) {
   LT = table; const t = T[table];
-  const { data = [] } = await sb.from(table).select("*").order(t.order, { ascending: !!t.asc });
+  const { data, error: listError } = await sb.from(table).select("*").order(t.order, { ascending: !!t.asc });
+  const rows = data ?? [];
   let scheduleBlock = "";
   if (table === "themes" && ROLE === "admin") {
-    const { data: st } = await sb.from("settings").select("*").eq("id", 1).single();
-    if (st) scheduleBlock = `<form id="theme-schedule" class="admin-schedule"><h3>Photo Theme Schedule Settings</h3>
+    const { data: st, error: settingsError } = await sb.from("settings").select("*").eq("id", 1).single();
+    if (settingsError) scheduleBlock = `<p class="auth-error">Could not load schedule settings: ${esc(settingsError.message)}</p>`;
+    else if (st) scheduleBlock = `<form id="theme-schedule" class="admin-schedule"><h3>Photo Theme Schedule Settings</h3>
       <label>Days each theme runs <small>Used to suggest dates for new themes. You can still edit each theme's dates individually.</small><input name="theme_length_days" type="number" min="1" value="${st.theme_length_days}"></label>
       <label>Photos per student per theme<input name="max_photos_per_theme" type="number" min="1" value="${st.max_photos_per_theme}"></label>
       <label>Time zone <small>e.g. America/Denver, America/New_York</small><input name="timezone" value="${esc(st.timezone)}"></label>
@@ -55,32 +65,40 @@ async function listUI(table, host) {
       <small>Share this link: <b id="pub-link"></b><br>Anyone with the link can submit photos (you approve each one first) and see approved photos from finished themes. That means photos of students can be seen by anyone who has the link, so only switch this on if families are comfortable with that. Switch it off any time.</small>
       <div><button class="auth-btn" type="submit">Save schedule settings</button></div><small id="schedule-msg"></small></form>`;
   }
-  host.innerHTML = (host === app ? tabs() : "") + `<button class="auth-btn" id="new">+ Add new</button><div id="list">` +
-    data.map(r => `<div class="row"><span>${esc(r[t.title])} <small>${esc(r.date || (r.starts_at ? new Date(r.starts_at).toLocaleString() : ""))}</small>${r.publish_at && new Date(r.publish_at) > new Date() ? ` <span class="sched-badge">Scheduled for ${esc(new Date(r.publish_at).toLocaleString())}</span>` : ""}</span><span>${table === "themes" ? `<button class="auth-btn alt" data-ph="${r.id}">Photos</button> ` : ""}<button class="auth-btn alt" data-e="${r.id}">Edit</button> <button class="auth-btn alt" data-d="${r.id}">Delete</button></span></div>`).join("") + "</div><div id=\"form\"></div>" + (table === "themes" ? '<div id="photos-section"></div>' : "") + scheduleBlock;
+  host.innerHTML = (host === app ? tabs() : "") + (listError ? `<p class="auth-error">Could not load ${esc(t.label.toLowerCase())}: ${esc(listError.message)}</p>` : "") + `<button class="auth-btn" id="new">+ Add new</button><div id="list">` +
+    rows.map(r => `<div class="row"><span>${esc(r[t.title])} <small>${esc(r.date || (r.starts_at ? new Date(r.starts_at).toLocaleString() : ""))}</small>${r.publish_at && new Date(r.publish_at) > new Date() ? ` <span class="sched-badge">Scheduled for ${esc(new Date(r.publish_at).toLocaleString())}</span>` : ""}</span><span>${table === "themes" ? `<button class="auth-btn alt" data-ph="${r.id}">Photos</button> ` : ""}<button class="auth-btn alt" data-e="${r.id}">Edit</button> <button class="auth-btn alt" data-d="${r.id}">Delete</button></span></div>`).join("") + "</div><div id=\"form\"></div>" + (table === "themes" ? '<div id="photos-section"></div>' : "") + scheduleBlock;
   if (host === app) wire();
   if (ROLE !== "admin") host.querySelectorAll("[data-e],[data-d]").forEach(b => b.remove());
   const scheduleForm = document.getElementById("theme-schedule");
   const pl = document.getElementById("pub-link"); if (pl) pl.textContent = new URL("share-photos.html", location.href).href;
   if (scheduleForm) scheduleForm.onsubmit = async e => {
     e.preventDefault(); const f = e.target.elements, msg = document.getElementById("schedule-msg"); msg.textContent = "Saving…";
+    if (!isValidTimeZone(f.timezone.value.trim())) { msg.textContent = "Enter a valid time zone, such as America/Denver."; return; }
     const { error } = await sb.from("settings").update({ theme_length_days: +f.theme_length_days.value, max_photos_per_theme: +f.max_photos_per_theme.value, timezone: f.timezone.value.trim(), public_photo_page: f.public_photo_page.checked }).eq("id", 1);
     msg.textContent = error ? "Error: " + error.message : "Saved";
   };
   if (table === "themes") photosSection();
   document.getElementById("new").onclick = () => form(null);
   host.querySelectorAll("[data-ph]").forEach(b => b.onclick = async () => { sel = b.dataset.ph; await photosSection(); document.getElementById("photos-section").scrollIntoView({ behavior: "smooth" }); });
-  host.querySelectorAll("[data-e]").forEach(b => b.onclick = () => form(data.find(r => r.id === b.dataset.e)));
+  host.querySelectorAll("[data-e]").forEach(b => b.onclick = () => form(rows.find(r => r.id === b.dataset.e)));
   host.querySelectorAll("[data-d]").forEach(b => b.onclick = async () => {
     if (!confirm("Delete this permanently?")) return;
-    const { error } = await sb.from(table).delete().eq("id", b.dataset.d); error ? alert(error.message) : show();
+    const { data, error } = await sb.from(table).delete().eq("id", b.dataset.d).select("id").maybeSingle();
+    if (error || !data) return alert(error?.message || "The item was not deleted.");
+    show();
   });
 }
 
 async function form(row) {
   const t = T[LT]; let d = row || {};
-  if (!row && LT === "themes") { const { data } = await sb.rpc("next_theme_window"); if (data?.[0]) d = { starts_at: data[0].starts_at, ends_at: data[0].ends_at }; }
+  let suggestionError = "";
+  if (!row && LT === "themes") {
+    const { data, error } = await sb.rpc("next_theme_window");
+    if (error) suggestionError = "Could not suggest dates: " + error.message;
+    else if (data?.[0]) d = { starts_at: data[0].starts_at, ends_at: data[0].ends_at };
+  }
   const el = document.getElementById("form");
-  el.innerHTML = `<form><h3>${row ? "Edit" : "New"} ${t.label}</h3>` + t.f.map(([k, lab, type, acc]) => {
+  el.innerHTML = `<form><h3>${row ? "Edit" : "New"} ${t.label}</h3>${suggestionError ? `<p class="auth-error">${esc(suggestionError)}</p>` : ""}` + t.f.map(([k, lab, type, acc]) => {
     const v = d[k] ?? "";
     if (type === "textarea") return `<label>${lab}<textarea name="${k}" rows="4">${esc(v)}</textarea></label>`;
     if (type === "file") return `<label>${lab}${v ? ` <small>Current file kept unless you choose a new one</small>` : ""}<input type="file" name="${k}" accept="${acc}"></label>`;
@@ -91,7 +109,7 @@ async function form(row) {
   el.querySelector("#x").onclick = () => (el.innerHTML = "");
   el.querySelector("form").onsubmit = async e => {
     e.preventDefault(); const msg = el.querySelector("#msg"); msg.textContent = "Saving…";
-    const out = {};
+    const out = {}, uploaded = [], replaced = [];
     for (const [k, , type] of t.f) {
       const inp = e.target.elements[k];
       if (type === "file") {
@@ -100,14 +118,44 @@ async function form(row) {
         const up = await sb.storage.from("media").upload(path, f);
         if (up.error) return (msg.textContent = "Upload failed: " + up.error.message);
         out[k] = path;
+        uploaded.push(path);
+        if (row?.[k]) replaced.push(row[k]);
       } else if (type === "datetime_opt") out[k] = inp.value ? new Date(inp.value).toISOString() : new Date().toISOString();
       else if (type === "datetime") out[k] = new Date(inp.value).toISOString();
-      else if (type === "yt") out[k] = inp.value.trim() ? ytId(inp.value) : null;
+      else if (type === "yt") {
+        const value = inp.value.trim(), id = value ? ytId(value) : null;
+        if (value && !id) { msg.textContent = "Enter a valid YouTube video URL or 11-character video ID."; return; }
+        out[k] = id;
+      }
       else if (type === "number") out[k] = Number(inp.value) || 0;
       else out[k] = inp.value.trim() || null;
     }
+    if (LT === "videos") {
+      const youtubeInput = e.target.elements.youtube_id.value.trim();
+      const youtubeChanged = row
+        ? (youtubeInput ? ytId(youtubeInput) : null) !== row.youtube_id
+        : !!youtubeInput;
+      if (e.target.elements.video_path.files[0]) out.youtube_id = null;
+      else if (youtubeChanged) {
+        out.video_path = null;
+        if (row?.video_path) replaced.push(row.video_path);
+      }
+    }
     const q = row ? sb.from(LT).update(out).eq("id", row.id) : sb.from(LT).insert(out);
-    const { error } = await q; error ? (msg.textContent = "Error: " + error.message) : show();
+    const { error } = await q;
+    if (error) {
+      const cleanup = uploaded.length ? await sb.storage.from("media").remove(uploaded) : { error: null };
+      msg.textContent = "Error: " + error.message + (cleanup.error ? " Uploaded file cleanup failed: " + cleanup.error.message : "");
+      return;
+    }
+    if (replaced.length) {
+      const cleanup = await sb.storage.from("media").remove(replaced);
+      if (cleanup.error) {
+        msg.textContent = "Saved, but the replaced file could not be removed: " + cleanup.error.message;
+        return;
+      }
+    }
+    show();
   };
 }
 
@@ -124,6 +172,10 @@ const DEFAULT_PORTAL_TILES = [
 const DEFAULT_PORTAL_BANNER = { enabled: false, text: "", link_text: "Learn more", link_url: "" };
 async function portalLayoutUI(host = app) {
   const { data: st, error } = await sb.from("settings").select("portal_banner,portal_tiles").eq("id", 1).single();
+  if (error) {
+    host.innerHTML = (host === app ? tabs() : "") + `<p class="auth-error">Could not load portal settings: ${esc(error.message)}</p>`;
+    return;
+  }
   const banner = { ...DEFAULT_PORTAL_BANNER, ...(st?.portal_banner || {}) };
   let tiles = Array.isArray(st?.portal_tiles) && st.portal_tiles.length ? st.portal_tiles : DEFAULT_PORTAL_TILES;
   host.innerHTML = (host === app ? tabs() : "") + `<section class="portal-admin-section"><h3>Announcement banner</h3><p>Show a message directly below the navigation bar. Link to another page on this site (for example <code>photos.html</code>) or paste a full external URL.</p>
@@ -159,6 +211,10 @@ const DEFAULT_HOME_SECTIONS = [
 ];
 async function homeLayoutUI(host = app) {
   const {data: st, error} = await sb.from("settings").select("portal_home_sections").eq("id",1).single();
+  if (error) {
+    host.innerHTML = (host === app ? tabs() : "") + `<p class="auth-error">Could not load home page settings: ${esc(error.message)}</p>`;
+    return;
+  }
   let sections = Array.isArray(st?.portal_home_sections) && st.portal_home_sections.length ? st.portal_home_sections : DEFAULT_HOME_SECTIONS;
   sections = [...sections.filter(s=>DEFAULT_HOME_SECTIONS.some(d=>d.id===s.id)), ...DEFAULT_HOME_SECTIONS.filter(d=>!sections.some(s=>s.id===d.id))];
   host.innerHTML = (host === app ? tabs() : "") + `<section class="portal-admin-section"><h3>Home page layout</h3><p>Choose which sections appear on the home page and change their order. The Photo Challenge shortcut gives students a clear path to upload photos. Your existing tiles, announcement banner, and content remain intact.</p>${error ? `<p class="auth-error">Couldn't load settings: ${esc(error.message)}</p>` : ""}<div id="home-section-editor" aria-label="Drag sections to reorder">${sections.map((s)=>`<div class="home-section-edit" data-section="${s.id}" draggable="true"><span class="home-drag-handle" aria-hidden="true">Move</span><label class="inline-check"><input type="checkbox" name="enabled" ${s.enabled!==false?"checked":""}> ${esc(s.label)}</label><span class="home-drag-hint">Drag to reorder</span></div>`).join("")}</div><div class="portal-admin-actions"><button class="auth-btn" id="save-home-layout">Save home page</button></div><small id="home-layout-msg"></small></section>`;
@@ -182,7 +238,11 @@ async function homeLayoutUI(host = app) {
 }
 
 async function settings() {
-  const { data: s } = await sb.from("settings").select("*").eq("id", 1).single();
+  const { data: s, error } = await sb.from("settings").select("*").eq("id", 1).single();
+  if (error || !s) {
+    app.innerHTML = tabs() + `<p class="auth-error">Could not load schedule settings: ${esc(error?.message || "No settings were returned.")}</p>`;
+    return;
+  }
   app.innerHTML = tabs() + `<form><h3>Schedule settings</h3>
   <label>Days each theme runs <small>Used to suggest dates when you add the next theme. You can still edit any theme's dates by hand.</small><input name="theme_length_days" type="number" min="1" value="${s.theme_length_days}"></label>
   <label>Photos per student per theme<input name="max_photos_per_theme" type="number" min="1" value="${s.max_photos_per_theme}"></label>
@@ -191,6 +251,7 @@ async function settings() {
   wire();
   app.querySelector("form").onsubmit = async e => {
     e.preventDefault(); const f = e.target.elements;
+    if (!isValidTimeZone(f.timezone.value.trim())) { app.querySelector("#msg").textContent = "Enter a valid time zone, such as America/Denver."; return; }
     const { error } = await sb.from("settings").update({ theme_length_days: +f.theme_length_days.value, max_photos_per_theme: +f.max_photos_per_theme.value, timezone: f.timezone.value.trim() }).eq("id", 1);
     app.querySelector("#msg").textContent = error ? "Error: " + error.message : "Saved";
   };
@@ -200,11 +261,21 @@ let sel = null;
 const shrink = f => new Promise((ok, no) => { const i = new Image(); i.onload = () => { const s = Math.min(1, 1600 / Math.max(i.width, i.height)), c = document.createElement("canvas"); c.width = i.width * s; c.height = i.height * s; c.getContext("2d").drawImage(i, 0, 0, c.width, c.height); c.toBlob(ok, "image/jpeg", .85); }; i.onerror = no; i.src = URL.createObjectURL(f); });
 async function photosSection() {
   const box = document.getElementById("photos-section"); if (!box) return;
-  const { data: th = [] } = await sb.from("themes").select("*").order("starts_at", { ascending: false });
+  const { data: themes, error: themesError } = await sb.from("themes").select("*").order("starts_at", { ascending: false });
+  const th = themes ?? [];
+  if (themesError) { box.innerHTML = `<p class="auth-error">Could not load themes: ${esc(themesError.message)}</p>`; return; }
   if (!th.length) { box.innerHTML = "<h3>Photos</h3><p>Add a theme above first. For past themes, just use past dates.</p>"; return; }
   sel = th.find(t => t.id === sel)?.id || th[0].id;
-  const { data: subs = [] } = await sb.from("submissions").select("*").eq("theme_id", sel).order("created_at");
-  const urls = {}; if (subs.length) (await sb.storage.from("photos").createSignedUrls(subs.map(s => s.image_path), 3600)).data?.forEach(u => urls[u.path] = u.signedUrl);
+  const { data: submissions, error: subsError } = await sb.from("submissions").select("*").eq("theme_id", sel).order("created_at");
+  const subs = submissions ?? [];
+  if (subsError) { box.innerHTML = `<p class="auth-error">Could not load submissions: ${esc(subsError.message)}</p>`; return; }
+  const urls = {};
+  if (subs.length) {
+    const { data: signed, error } = await sb.storage.from("photos").createSignedUrls(subs.map(s => s.image_path), 3600);
+    if (error) { box.innerHTML = `<p class="auth-error">Could not load photo files: ${esc(error.message)}</p>`; return; }
+    if (!signed || signed.length !== subs.length || signed.some(file => !file.signedUrl)) { box.innerHTML = "<p class=\"auth-error\">One or more photo links could not be created. Refresh and try again.</p>"; return; }
+    signed?.forEach(u => { if (u.signedUrl) urls[u.path] = u.signedUrl; });
+  }
   const opts = id => th.map(t => `<option value="${t.id}" ${t.id === id ? "selected" : ""}>${esc(t.title)} (${new Date(t.starts_at).toLocaleDateString()})</option>`).join("");
   const grp = st => subs.filter(s => s.status === st), pend = grp("pending"), appr = grp("approved"), rej = grp("rejected");
   const via = s => s.image_path.startsWith("public/") ? ' <span class="via-badge">public page</span>' : "";
@@ -222,14 +293,37 @@ async function photosSection() {
   <label>Photos<input type="file" name="f" accept="image/*" multiple required></label>
   <div><button class="auth-btn" type="submit">Import as approved</button></div><small id="ph-msg"></small></form>`;
   box.querySelector("#ph-ts").onchange = e => { sel = e.target.value; photosSection(); };
-  box.querySelectorAll("[data-s]").forEach(b => b.onclick = async () => { await sb.from("submissions").update({ status: b.dataset.s }).eq("id", b.dataset.id); photosSection(); });
-  box.querySelectorAll("[data-x]").forEach(b => b.onclick = async () => { if (!confirm("Delete this photo?")) return; await sb.from("submissions").delete().eq("id", b.dataset.x); await sb.storage.from("photos").remove([b.dataset.p]); photosSection(); });
+  box.querySelectorAll("[data-s]").forEach(b => b.onclick = async () => {
+    const { data, error } = await sb.from("submissions").update({ status: b.dataset.s }).eq("id", b.dataset.id).select("id").maybeSingle();
+    if (error || !data) return alert("Could not update photo status: " + (error?.message || "no submission was updated"));
+    photosSection();
+  });
+  box.querySelectorAll("[data-x]").forEach(b => b.onclick = async () => {
+    if (!confirm("Delete this photo?")) return;
+    const { data, error } = await sb.from("submissions").delete().eq("id", b.dataset.x).select("id").maybeSingle();
+    if (error || !data) return alert("Could not delete photo record: " + (error?.message || "no submission was deleted"));
+    const cleanup = await sb.storage.from("photos").remove([b.dataset.p]);
+    if (cleanup.error) return alert("Photo record deleted, but its file could not be removed: " + cleanup.error.message);
+    photosSection();
+  });
   box.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => {
     const s = subs.find(x => x.id === b.dataset.edit), fig = box.querySelector(`[data-fig="${s.id}"]`);
     fig.querySelector("figcaption").innerHTML = `<input class="ed-name" value="${esc(s.submitted_by)}" maxlength="60" aria-label="Name shown with this photo"><span><button class="auth-btn" data-save>Save name</button> <button class="auth-btn alt" data-del>Delete photo</button> <button class="auth-btn alt" data-cancel>Cancel</button></span>`;
     fig.querySelector(".ed-name").focus();
-    fig.querySelector("[data-save]").onclick = async () => { const nm = fig.querySelector(".ed-name").value.trim(); if (!nm) return; const { error } = await sb.from("submissions").update({ submitted_by: nm }).eq("id", s.id); error ? alert(error.message) : photosSection(); };
-    fig.querySelector("[data-del]").onclick = async () => { if (!confirm("Delete this photo permanently?")) return; await sb.from("submissions").delete().eq("id", s.id); await sb.storage.from("photos").remove([s.image_path]); photosSection(); };
+    fig.querySelector("[data-save]").onclick = async () => {
+      const nm = fig.querySelector(".ed-name").value.trim(); if (!nm) return;
+      const { data, error } = await sb.from("submissions").update({ submitted_by: nm }).eq("id", s.id).select("id").maybeSingle();
+      if (error || !data) return alert("Could not update the name: " + (error?.message || "no submission was updated"));
+      photosSection();
+    };
+    fig.querySelector("[data-del]").onclick = async () => {
+      if (!confirm("Delete this photo permanently?")) return;
+      const { data, error } = await sb.from("submissions").delete().eq("id", s.id).select("id").maybeSingle();
+      if (error || !data) return alert("Could not delete photo record: " + (error?.message || "no submission was deleted"));
+      const cleanup = await sb.storage.from("photos").remove([s.image_path]);
+      if (cleanup.error) return alert("Photo record deleted, but its file could not be removed: " + cleanup.error.message);
+      photosSection();
+    };
     fig.querySelector("[data-cancel]").onclick = () => photosSection();
   });
   box.querySelector("#ph-man").onsubmit = async e => {
@@ -238,7 +332,11 @@ async function photosSection() {
       msg.textContent = `Uploading ${k + 1} of ${files.length}…`;
       try {
         const path = `admin/${crypto.randomUUID()}.jpg`, up = await sb.storage.from("photos").upload(path, await shrink(file), { contentType: "image/jpeg" }); if (up.error) throw up.error;
-        const ins = await sb.from("submissions").insert({ theme_id: target, user_id: null, submitted_by: f.n.value.trim(), image_path: path, status: "approved" }); if (ins.error) throw ins.error;
+        const ins = await sb.from("submissions").insert({ theme_id: target, user_id: null, submitted_by: f.n.value.trim(), image_path: path, status: "approved" });
+        if (ins.error) {
+          const cleanup = await sb.storage.from("photos").remove([path]);
+          throw new Error(ins.error.message + (cleanup.error ? "; uploaded-file cleanup failed: " + cleanup.error.message : ""));
+        }
       } catch (err) { return (msg.textContent = "Failed on " + file.name + ": " + (err.message || err)); }
     }
     sel = target; await photosSection();
@@ -251,8 +349,8 @@ function importUI() {
   app.innerHTML = tabs() + `<form id="imp"><h3>Import students</h3>
   <label>Student list <small>One per line: email, name (a header row is fine). Or choose a CSV file below.</small><textarea name="list" rows="8" placeholder="jane.doe@latterup.org, Jane Doe"></textarea></label>
   <label>CSV file (optional)<input type="file" name="csv" accept=".csv,.txt"></label>
-  <label><span><input type="radio" name="m" value="same" checked> Same starting password for everyone</span><input name="pw" placeholder="At least 8 characters"></label>
-  <label><span><input type="radio" name="m" value="random"> A different random password for each student (you'll download the list)</span></label>
+  <label><span><input type="radio" name="m" value="same"> Same starting password for everyone</span><input name="pw" placeholder="At least 8 characters"></label>
+  <label><span><input type="radio" name="m" value="random" checked> A different random password for each student (you'll download the list)</span></label>
   <label><span><input type="checkbox" name="reset"> Also reset the password of students who already have an account</span></label>
   <small>Students are asked to choose their own password the first time they sign in. Existing accounts are left alone unless you tick the box above.</small>
   <div><button class="auth-btn" type="submit">Create accounts</button></div><div id="res"></div></form>`;
@@ -277,20 +375,23 @@ function importUI() {
       all.filter(r => r.note).map(r => `<small>${esc(r.email)}: ${esc(r.note)}</small><br>`).join("");
     const pw = all.filter(r => r.password);
     if (random && pw.length) {
-      const csv = "email,name,password\n" + pw.map(r => `"${r.email}","${r.name || ""}","${r.password}"`).join("\n");
+      const csvCell = value => `"${String(value ?? "").replace(/"/g, '""').replace(/^[=+\-@]/, "'$&")}"`;
+      const csv = "email,name,password\n" + pw.map(r => [r.email, r.name, r.password].map(csvCell).join(",")).join("\n");
       const a = document.createElement("a"); a.className = "auth-btn"; a.textContent = "Download passwords (then delete the file after handing them out)";
       a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = "student-passwords.csv"; res.appendChild(a);
     }
   };
 }
 async function peopleUI(table, heading, blurb, addLabel, btnText) {
-  const { data = [], error } = await sb.from(table).select("email").order("email");
+  const { data, error } = await sb.from(table).select("email").order("email");
+  const rows = data ?? [];
   const me = (await sb.auth.getSession()).data.session.user.email.toLowerCase();
   app.innerHTML = tabs() + `<h3>${heading}</h3><p><small>${blurb}</small></p>${error ? `<p class="auth-error">${esc(error.message)}, run the latest SQL update first.</p>` : ""}` +
-    data.map(a => `<div class="row"><span>${esc(a.email)}</span>${table === "admins" && a.email === me ? "<small>(you)</small>" : `<button class="auth-btn alt" data-rm="${esc(a.email)}">Remove</button>`}</div>`).join("") +
+    rows.map(a => `<div class="row"><span>${esc(a.email)}</span>${table === "admins" && a.email === me ? "<small>(you)</small>" : `<button class="auth-btn alt" data-rm="${esc(a.email)}">Remove</button>`}</div>`).join("") +
     `<form id="aa"><label>${addLabel}<input type="email" name="e" placeholder="name@latterup.org" required></label><div><button class="auth-btn" type="submit">${btnText}</button></div><small id="msg"></small></form>`;
   wire();
-  app.querySelectorAll("[data-rm]").forEach(b => b.onclick = async () => { if (confirm("Remove " + b.dataset.rm + " from " + heading.toLowerCase() + "?")) { await sb.from(table).delete().eq("email", b.dataset.rm); peopleUI(table, heading, blurb, addLabel, btnText); } });
+  app.querySelectorAll("[data-rm]").forEach(b => b.onclick = async () => { if (confirm("Remove " + b.dataset.rm + " from " + heading.toLowerCase() + "?")) { const { data, error } = await sb.from(table).delete().eq("email", b.dataset.rm).select("email").maybeSingle(); if (error || !data) return alert("Could not remove " + b.dataset.rm + ": " + (error?.message || "no record was deleted")); peopleUI(table, heading, blurb, addLabel, btnText); } });
+  if (error) return;
   document.getElementById("aa").onsubmit = async e => {
     e.preventDefault(); const em = e.target.elements.e.value.trim().toLowerCase(), msg = document.getElementById("msg");
     if (!em.endsWith("@latterup.org")) return (msg.textContent = "Use an @latterup.org address.");
@@ -327,15 +428,16 @@ async function homeTabUI() {
 }
 
 async function studentsUI() {
-  const { data = [], error } = await sb.rpc("list_students");
+  const { data, error } = await sb.rpc("list_students");
+  const students = data ?? [];
   app.innerHTML = tabs() + `<h3>Students</h3><p><small>Everyone who has a login for the portal. To add more people, use the Import students tab.</small></p>${error ? `<p class="auth-error">${esc(error.message)}, run update-6-students-list.sql first.</p>` : ""}
     <label>Search<input id="st-q" type="search" placeholder="Type a name or email"></label><p><small id="st-count"></small></p><div id="st-list"></div>`;
   wire();
   const list = document.getElementById("st-list"), count = document.getElementById("st-count");
   const paint = () => {
     const q = document.getElementById("st-q").value.trim().toLowerCase();
-    const rows = data.filter(s => !q || (s.email + " " + (s.full_name || "")).toLowerCase().includes(q));
-    count.textContent = q ? `${rows.length} of ${data.length} people` : `${data.length} people`;
+    const rows = students.filter(s => !q || (s.email + " " + (s.full_name || "")).toLowerCase().includes(q));
+    count.textContent = q ? `${rows.length} of ${students.length} people` : `${students.length} people`;
     list.innerHTML = rows.map(s => `<div class="row"><span>${s.full_name ? "<b>" + esc(s.full_name) + "</b> · " : ""}${esc(s.email)}
       ${s.admin_role ? ' <span class="via-badge">Admin</span>' : ""}${s.leader_role ? ' <span class="via-badge">Leadership</span>' : ""}${s.must_change_password ? ' <span class="sched-badge">Hasn\'t chosen a password yet</span>' : ""}</span>
       <small>${s.last_sign_in_at ? "Last sign-in " + esc(new Date(s.last_sign_in_at).toLocaleDateString()) : "Never signed in"}</small></div>`).join("") || "<p><small>No matches.</small></p>";

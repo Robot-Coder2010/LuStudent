@@ -26,20 +26,41 @@
     localStorage.setItem("lu-theme", root.dataset.theme);
     paint();
   };
+  const toggleLocalPreview = () => {
+    try {
+      if (window.LU_LOCAL_PREVIEW) localStorage.removeItem("lu-local-preview");
+      else localStorage.setItem("lu-local-preview", "enabled");
+      location.reload();
+    } catch (error) {
+      console.error("Could not update local preview mode.", error);
+    }
+  };
+  const wireProfileMenu = () => {
+    $("pb").onclick = event => { event.stopPropagation(); $("pm").classList.toggle("open"); };
+    $("th").onclick = event => { event.stopPropagation(); toggleTheme(); };
+    const previewToggle = $("preview-toggle");
+    if (previewToggle) previewToggle.onclick = toggleLocalPreview;
+    document.addEventListener("click", () => $("pm").classList.remove("open"));
+  };
   $("bg").onclick = () => { const o = $("nav").classList.toggle("open"); $("bg").setAttribute("aria-expanded", o); };
+  if (window.LU_LOCAL_PREVIEW) {
+    $("pf").innerHTML = '<button class="icon-btn avatar" id="pb" aria-label="Local preview profile menu" aria-haspopup="true">P</button><div class="menu" id="pm"><div class="who"><b>Local preview</b><br>Admin interface · sample data only</div><a href="admin.html">Admin preview</a><button id="preview-toggle" type="button">Exit local preview</button><button id="th" class="theme-menu-toggle" type="button"></button></div>';
+    paint(); wireProfileMenu();
+    return;
+  }
   const { data: { session } } = await sb.auth.getSession();
   if (!session) {
-    $("pf").innerHTML = '<button class="auth-btn" id="si">Sign in</button><button class="icon-btn theme-standalone" id="th" aria-label="Switch light/dark mode"></button>';
+    const previewOption = window.LU_LOCAL_HOST ? '<button id="preview-toggle" type="button">Use local preview</button>' : "";
+    $("pf").innerHTML = `<button class="icon-btn avatar" id="pb" aria-label="Profile menu" aria-haspopup="true">?</button><div class="menu" id="pm"><div class="who"><b>Not signed in</b></div><a href="#" id="si">Sign in</a>${previewOption}<button id="th" class="theme-menu-toggle" type="button"></button></div>`;
     $("si").onclick = () => (location.href = "login.html?next=" + encodeURIComponent(page));
-    paint(); $("th").onclick = toggleTheme;
+    paint(); wireProfileMenu();
   }
   else {
     const u = session.user, name = u.app_metadata?.full_name || u.email, adm = await (async () => { const r = await sb.rpc("my_role"); return r.data || ((await sb.rpc("is_admin")).data ? "admin" : "student"); })();
+    const previewOption = window.LU_LOCAL_HOST ? '<button id="preview-toggle" type="button">Use local preview</button>' : "";
     $("pf").innerHTML = `<button class="icon-btn avatar" id="pb" aria-label="Profile menu" aria-haspopup="true">${name[0].toUpperCase()}</button>
-      <div class="menu" id="pm"><div class="who"><b>${name.replace(/[<>&]/g, "")}</b><br>${u.email}</div><a href="change-password.html">Change password</a><a href="photos.html">My photos</a>${adm !== "student" ? '<a href="admin.html">' + (adm === "admin" ? "Admin" : "Leadership tools") + '</a>' : ""}<a href="mailto:studentleadership@latterup.org">Contact Student Leadership</a><button id="th" class="theme-menu-toggle" type="button"></button><button id="so">Sign out</button></div>`;
-    paint(); $("th").onclick = e => { e.stopPropagation(); toggleTheme(); };
-    $("pb").onclick = e => { e.stopPropagation(); $("pm").classList.toggle("open"); };
-    document.addEventListener("click", () => $("pm").classList.remove("open"));
+      <div class="menu" id="pm"><div class="who"><b>${name.replace(/[<>&]/g, "")}</b><br>${u.email}</div><a href="change-password.html">Change password</a><a href="photos.html">My photos</a>${adm !== "student" ? '<a href="admin.html">' + (adm === "admin" ? "Admin" : "Leadership tools") + '</a>' : ""}<a href="mailto:studentleadership@latterup.org">Contact Student Leadership</a>${previewOption}<button id="th" class="theme-menu-toggle" type="button"></button><button id="so">Sign out</button></div>`;
+    paint(); wireProfileMenu();
     $("so").onclick = async () => { await sb.auth.signOut(); location.href = "index.html"; };
   }
 })();

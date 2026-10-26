@@ -15,23 +15,50 @@
 <label>Password<input type="password" data-pw name="p" autocomplete="current-password" required></label>
 <label class="chk"><input type="checkbox" class="showpw"> Show password</label>
 <div><button class="auth-btn" type="submit">Sign in</button></div>
-<small>Forgot your password? Message Student Leadership and we'll reset it for you.</small><p class="auth-error" id="e1" hidden></p></form>
+<small>Forgot your password? Message Student Leadership and we'll reset it for you.</small><p class="auth-error" id="e1" role="alert" hidden></p></form>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script><script src="config.js"></script>
 <script src="icons.js"></script>
 <script src="layout.js"></script>
 <script>
 const sb = window.LUsb || supabase.createClient(LU_CONFIG.url, LU_CONFIG.key), $ = id => document.getElementById(id);
+const requestedPage = new URLSearchParams(location.search).get("next");
+const nextPage = requestedPage && /^[a-z0-9-]+\.html$/i.test(requestedPage) && !["login.html", "change-password.html"].includes(requestedPage.toLowerCase())
+  ? requestedPage
+  : "index.html";
+const postSignInPage = user => user.app_metadata?.must_change_password || user.user_metadata?.must_change_password
+  ? "change-password.html?next=" + encodeURIComponent(nextPage)
+  : nextPage;
 document.querySelectorAll(".showpw").forEach(c => c.onchange = () => c.closest("form").querySelectorAll("input[data-pw]").forEach(i => i.type = c.checked ? "text" : "password"));
 const err = (id, m) => { $(id).textContent = m; $(id).hidden = false; };
+const openedFromDisk = location.protocol === "file:";
 (async () => {
-  const { data: { session } } = await sb.auth.getSession();
-  if (session) location.replace(session.user.user_metadata?.must_change_password ? "change-password.html" : "index.html");
+  if (openedFromDisk) {
+    err("e1", "This site was opened directly from disk, so sign-in cannot be shared reliably between pages. In the project folder, run `py -m http.server 8000` in PowerShell, then open http://localhost:8000. If `py` is unavailable, try `python -m http.server 8000`.");
+    $("in").querySelector('[type="submit"]').disabled = true;
+    return;
+  }
+  const { data, error } = await sb.auth.getSession();
+  if (error) {
+    err("e1", "We couldn't check your saved sign-in. You can still try signing in below.");
+    return;
+  }
+  if (!data.session) return;
+  const { data: verified, error: verificationError } = await sb.auth.getUser();
+  if (verificationError || !verified.user) {
+    err("e1", "A saved sign-in couldn't be verified. Enter your email and password to sign in again.");
+    return;
+  }
+  location.replace(postSignInPage(verified.user));
 })();
 $("in").onsubmit = async e => {
-  e.preventDefault(); const f = e.target.elements;
-  const { data, error } = await sb.auth.signInWithPassword({ email: f.e.value.trim(), password: f.p.value });
+  e.preventDefault();
+  if (openedFromDisk) return;
+  const f = e.target.elements;
+  const { error } = await sb.auth.signInWithPassword({ email: f.e.value.trim(), password: f.p.value });
   if (error) return err("e1", "That email or password isn't right.");
-  location.replace(data.user.user_metadata?.must_change_password ? "change-password.html" : "index.html");
+  const { data: verified, error: verificationError } = await sb.auth.getUser();
+  if (verificationError || !verified.user) return err("e1", "Your sign-in was accepted, but the session couldn't be verified. Please try again.");
+  location.replace(postSignInPage(verified.user));
 };
 </script></body></html>

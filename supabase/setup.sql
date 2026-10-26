@@ -125,7 +125,7 @@ declare
   st timestamptz;
 begin
   select * into s from public.settings where id = 1;
-  select coalesce(max(t.ends_at), now()) into st from public.themes t;
+  select greatest(coalesce(max(t.ends_at), now()), now()) into st from public.themes t;
   return query select
     st,
     ((st at time zone s.timezone) + make_interval(days => s.theme_length_days)) at time zone s.timezone;

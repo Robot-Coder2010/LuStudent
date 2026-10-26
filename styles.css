@@ -646,7 +646,7 @@ section { padding: 64px 0; }
   padding: 0 20px 20px;
 }
 
-.faq-answer p {
+.faq-answer > p:first-child {
   margin: 0;
 }
 
@@ -759,11 +759,12 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 
 
 /* Requested layout and theme refinements */
-[data-theme="dark"] .site-footer { background: #292d38; color: #F6F8FF; }
+[data-theme="dark"] .site-footer { background: var(--surface); color: var(--navy); }
 [data-theme="dark"] .site-footer .footer-brand p,
 [data-theme="dark"] .site-footer .footer-links a,
-[data-theme="dark"] .site-footer .footer-note { color: rgba(246,248,255,.82); }
-[data-theme="dark"] .site-footer .footer-links h3 { color: #F6F8FF; }
+[data-theme="dark"] .site-footer .footer-note { color: var(--stone); }
+[data-theme="dark"] .site-footer .footer-links h3 { color: var(--gold); }
+[data-theme="dark"] .site-footer .footer-inner { border-color: var(--stone-line); }
 .announcements-list { max-width: none; }
 .theme-menu-toggle { border-top: 1px solid var(--stone-line) !important; margin-top: .25rem; color: var(--navy) !important; }
 .theme-standalone { margin-left: .25rem; }

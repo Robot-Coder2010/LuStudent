@@ -14,4 +14,10 @@
 <main class="wrap adm" id="app"><p>Loading…</p></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
-<script src="icons.js"></script><script src="admin.js"></script></body></html>
+<script src="icons.js"></script>
+<script src="PLACEHOLDER/preview.js"></script>
+<script>
+const adminScript = document.createElement("script");
+adminScript.src = window.LU_LOCAL_PREVIEW ? "PLACEHOLDER/admin-preview.js" : "admin.js";
+document.body.appendChild(adminScript);
+</script></body></html>

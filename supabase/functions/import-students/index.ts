@@ -6,6 +6,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
@@ -15,15 +16,23 @@ const randomPw = () =>
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (req.method !== "POST") return json({ error: "Method not allowed." }, 405);
   try {
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
     // Only people listed in the admins table may use this.
-    const token = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
-    const { data: { user } } = await admin.auth.getUser(token);
+    const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+    const { data: { user }, error: userError } = await admin.auth.getUser(token);
+    if (userError) return json({ error: "Sign-in could not be verified." }, 401);
     if (!user?.email) return json({ error: "Not signed in." }, 401);
-    const { data: row } = await admin.from("admins").select("email").eq("email", user.email.toLowerCase()).maybeSingle();
-    if (!row) return json({ error: "Admins only." }, 403);
+    if (String(user.app_metadata?.must_change_password).toLowerCase() === "true") {
+      return json({ error: "Change your password before using admin tools." }, 403);
+    }
+    const { data: rows, error: adminLookupError } = await admin.from("admins").select("email");
+    if (adminLookupError) return json({ error: "Could not verify administrator access." }, 500);
+    if (!rows?.some((row) => row.email.trim().toLowerCase() === user.email.trim().toLowerCase())) {
+      return json({ error: "Admins only." }, 403);
+    }
 
     const { students, password, random, reset } = await req.json();
     if (!Array.isArray(students) || students.length < 1 || students.length > 50) return json({ error: "Send 1 to 50 students at a time." }, 400);
@@ -39,21 +48,24 @@ Deno.serve(async (req) => {
         password: pw,
         email_confirm: true,
         user_metadata: { must_change_password: true },
-        app_metadata: name ? { full_name: name } : {},
+        app_metadata: { must_change_password: true, ...(name ? { full_name: name } : {}) },
       };
       const { error } = await admin.auth.admin.createUser({ email, ...attrs });
       if (!error) { results.push({ email, name, status: "created", password: pw }); continue; }
 
       if (/already|exists|registered/i.test(error.message)) {
         if (!reset) { results.push({ email, status: "exists", note: "already has an account (left alone)" }); continue; }
-        let id: string | undefined;
-        for (let p = 1; !id; p++) {
+        let existing: (typeof user) | undefined;
+        for (let p = 1; !existing; p++) {
           const { data } = await admin.auth.admin.listUsers({ page: p, perPage: 200 });
-          id = data?.users.find((u) => u.email?.toLowerCase() === email)?.id;
+          existing = data?.users.find((u) => u.email?.toLowerCase() === email);
           if (!data || data.users.length < 200) break;
         }
-        if (id) {
-          const r = await admin.auth.admin.updateUserById(id, attrs);
+        if (existing) {
+          const r = await admin.auth.admin.updateUserById(existing.id, {
+            ...attrs,
+            app_metadata: { ...existing.app_metadata, ...attrs.app_metadata },
+          });
           results.push(r.error ? { email, status: "failed", note: r.error.message } : { email, name, status: "reset", password: pw });
           continue;
         }

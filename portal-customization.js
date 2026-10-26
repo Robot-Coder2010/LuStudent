@@ -1,7 +1,7 @@
 (() => {
   const C = window.LU_CONFIG;
   const sb = window.LUsb || (window.LUsb = supabase.createClient(C.url, C.key));
-  const esc = s => String(s ?? "").replace(/\s*\u2014\s*/g, ", ").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const defaults = [
     {title:"Calendar",description:"Co-op events, activities, and important dates.",url:"https://calendar.google.com",cta:"Open Google Calendar",icon:"calendar",secondary_text:"Open Family Sync",secondary_url:"https://familysync.latterup.org/"},
     {title:"Google Drive",description:"Your files, docs, slides, and sheets.",url:"https://drive.google.com",cta:"Open Google Drive",icon:"drive"},
@@ -23,7 +23,19 @@
     photo:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>',
     video:'<rect x="3" y="5" width="13" height="14" rx="2"/><path d="m16 10 5-3v10l-5-3z"/>'
   };
-  function safeUrl(value) { const v=String(value||"").trim(); if(!v) return "#"; if(/^(https?:|mailto:|tel:)/i.test(v)) return v; if(v.startsWith("/") || /^[\w.-]+\.html(?:[?#].*)?$/i.test(v) || v.startsWith("#")) return v; return v; }
+  function safeUrl(value) {
+    const v = String(value || "").trim();
+    if (!v || /[\u0000-\u001f\u007f\\]/.test(v)) return "#";
+    if (/^(https?:|mailto:|tel:)/i.test(v)) {
+      try {
+        const url = new URL(v);
+        return ["http:", "https:", "mailto:", "tel:"].includes(url.protocol) ? v : "#";
+      } catch { return "#"; }
+    }
+    if (v.startsWith("/") && !v.startsWith("//")) return v;
+    if (/^[\w.-]+\.html(?:[?#].*)?$/i.test(v) || /^#[\w-]*$/.test(v)) return v;
+    return "#";
+  }
   function card(t) {
     const url=safeUrl(t.url), external=/^https?:/i.test(url), target=external?' target="_blank" rel="noopener"':'';
     const secondary=t.secondary_text&&t.secondary_url?`<a class="calendar-secondary" href="${esc(safeUrl(t.secondary_url))}" ${/^https?:/i.test(t.secondary_url)?'target="_blank" rel="noopener"':''}>${esc(t.secondary_text)} ↗</a>`:"";
@@ -32,7 +44,15 @@
   async function run() {
     const grid=document.getElementById("portal-card-grid"); if(!grid) return;
     let banner={enabled:false,text:"",link_text:"Learn more",link_url:""}, tiles=defaults, homeSections=null;
-    try { const {data,error}=await sb.from("settings").select("portal_banner,portal_tiles,portal_home_sections").eq("id",1).single(); if(!error&&data){banner={...banner,...(data.portal_banner||{})}; if(Array.isArray(data.portal_tiles)&&data.portal_tiles.length) tiles=data.portal_tiles; if(Array.isArray(data.portal_home_sections)&&data.portal_home_sections.length) homeSections=data.portal_home_sections;} } catch(_) {}
+    if(!window.LU_LOCAL_PREVIEW) {
+      const { data, error } = await sb.rpc("portal_public_config");
+      if (error) console.error("Public portal settings could not be loaded:", error);
+      if (data) {
+        banner = { ...banner, ...(data.portal_banner || {}) };
+        if (Array.isArray(data.portal_tiles) && data.portal_tiles.length) tiles = data.portal_tiles;
+        if (Array.isArray(data.portal_home_sections) && data.portal_home_sections.length) homeSections = data.portal_home_sections;
+      }
+    }
     grid.innerHTML=tiles.map(card).join("");
     const main=document.querySelector("main#main");
     if(main){

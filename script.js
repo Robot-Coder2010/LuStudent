@@ -79,7 +79,7 @@
     card.className = "video-card";
 
     let mediaHtml;
-    if (item.youtubeId) {
+    if (/^[\w-]{11}$/.test(item.youtubeId || "")) {
       mediaHtml = `
         <div class="video-frame-wrap">
           <iframe
@@ -92,13 +92,20 @@
           </iframe>
         </div>
       `;
-    } else if (item.videoSrc) {
+    } else if (!item.youtubeId && item.videoSrc) {
       // Encode spaces/special characters in the path so filenames with
       // spaces (e.g. "December 2025 SL Video.mp4") still load correctly.
       const safeSrc = encodeURI(item.videoSrc);
       mediaHtml = `
         <div class="video-frame-wrap">
           <video controls preload="metadata" src="${safeSrc}"></video>
+        </div>
+      `;
+    } else if (item.previewImage) {
+      mediaHtml = `
+        <div class="video-frame-wrap video-preview-wrap">
+          <img src="${item.previewImage}" alt="Sample video preview: ${item.title}" loading="lazy">
+          <span class="video-preview-label">Sample video preview</span>
         </div>
       `;
     } else {
@@ -130,9 +137,7 @@
         const answerId = `faq-answer-${index}`;
         details.innerHTML = `
           <summary class="faq-question" aria-controls="${answerId}">${item.question}</summary>
-          <div class="faq-answer" id="${answerId}">
-            <p>${item.answer}</p>
-          </div>
+          <div class="faq-answer" id="${answerId}">${item.answer}</div>
         `;
         faqList.appendChild(details);
       });
