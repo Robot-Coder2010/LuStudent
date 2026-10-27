@@ -33,6 +33,8 @@
         const normalized = detail.toLowerCase();
         const reason = normalized.includes("captcha")
           ? "Anonymous sign-in is being blocked by CAPTCHA. This page does not currently request a CAPTCHA token; disable CAPTCHA for anonymous sign-ins or add a CAPTCHA flow."
+          : normalized.includes("signups not allowed") || normalized.includes("signup is disabled")
+            ? "Supabase is blocking all new accounts, including anonymous visitor sessions. Enable project sign-ups as well as Anonymous Sign-Ins in Authentication settings. Keep email confirmations enabled; the database only permits @latterup.org email accounts."
           : normalized.includes("anonymous") && (normalized.includes("disabled") || normalized.includes("not enabled"))
             ? "Anonymous sign-ins are disabled for this Supabase project. Enable Anonymous Sign-Ins in the Supabase Auth settings."
             : "Check the Supabase Auth settings and network connection, then try again.";
@@ -174,6 +176,7 @@
       const url = urls[ph[i].image_path];
       $("im").hidden = !url;
       $("im-missing").hidden = !!url;
+      $("im-missing").style.display = url ? "none" : "grid";
       if (url) $("im").src = url;
       else $("im").removeAttribute("src");
       $("cp").textContent = `${ph[i].submitted_by} · ${i + 1}/${ph.length}`;

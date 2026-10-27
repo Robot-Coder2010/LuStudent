@@ -10,7 +10,7 @@ update auth.users
  where lower(coalesce(raw_app_meta_data->>'must_change_password', 'false')) = 'true';
 ```
 
-Deploy both Supabase Edge Functions in `supabase/functions/`: `import-students` and `change-own-password`. In Supabase Authentication settings, disable public sign-ups because accounts are provisioned by admins, enable email confirmation for any remaining signup flow, and configure CAPTCHA for anonymous sign-ins before enabling the public photo page. To allow photo submissions without a visitor account, also enable **Anonymous Sign-Ins**; the page uses a persistent anonymous session and the photo cap is enforced per visitor session.
+Deploy both Supabase Edge Functions in `supabase/functions/`: `import-students` and `change-own-password`. For the public photo page, Supabase must allow new accounts and **Anonymous Sign-Ins** must be enabled; Supabase treats anonymous visitors as new auth users, so disabling sign-ups globally also blocks visitor sessions. The database trigger restricts email/password accounts to `@latterup.org` addresses, and email confirmations should remain enabled to prevent unverified email accounts from signing in. The photo page uses a persistent anonymous session and the photo cap is per visitor session. CAPTCHA is not currently wired into the page; do not enable Supabase CAPTCHA for anonymous sign-ins unless a CAPTCHA token flow has also been added. If you do not want anonymous visitor accounts, keep the public photo page disabled and leave anonymous sign-ins off.
 
 Update 8 adds the `videos_youtube_id_format` constraint as `NOT VALID` so old invalid rows don't block the migration. Before validating it, find and correct or remove any existing invalid IDs:
 

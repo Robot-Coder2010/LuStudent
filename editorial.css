@@ -378,6 +378,9 @@ h1, h2, h3, h4, .section-title, .page-title, .card-title, .brand-name, .footer-b
   text-align: center;
   font-size: .85rem;
 }
+.photo-missing-file[hidden] {
+  display: none !important;
+}
 .thumbs .photo-missing-file {
   aspect-ratio: 1;
   min-height: 0;
