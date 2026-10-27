@@ -57,8 +57,30 @@
     const main=document.querySelector("main#main");
     if(main){
       const photo=document.createElement("section"); photo.id="photo-challenge"; photo.className="home-photo-callout";
-      photo.innerHTML='<div class="wrap home-photo-callout-inner"><div class="home-photo-mark" aria-hidden="true">' + LUIcon("camera", 36) + '</div><div><p class="eyebrow">Create / Share / Celebrate</p><h2 class="section-title">Join the Photo Challenge</h2><p class="section-sub">Share a favorite moment in this round and explore the community gallery.</p></div><a class="auth-btn" href="photos.html">Submit your photos <span aria-hidden="true">↗</span></a></div>';
+      photo.innerHTML='<div class="wrap pc-inner">'
+        + '<div class="pc-copy"><p class="eyebrow">Create / Share / Celebrate</p><h2 class="section-title">Join the Photo Challenge</h2>'
+        + '<p class="section-sub">Share a favorite moment in this round and explore the community gallery.</p>'
+        + '<p class="pc-round" id="pc-round" hidden><span class="pc-round-label">This round</span><strong id="pc-round-title"></strong><span id="pc-round-due"></span></p>'
+        + '<div class="pc-actions"><a class="pc-btn" href="photos.html">Submit your photos <span aria-hidden="true">↗</span></a><a class="pc-link" href="photos.html#past">Browse the gallery</a></div></div>'
+        + '<div class="pc-collage" aria-hidden="true"><div class="pc-frame pc-f1"><span class="pc-shot">' + LUIcon("camera", 44) + '</span></div><div class="pc-frame pc-f2"><span class="pc-shot">' + LUIcon("camera", 44) + '</span></div><div class="pc-frame pc-f3"><span class="pc-shot">' + LUIcon("camera", 44) + '</span></div></div>'
+        + '<ol class="pc-steps"><li><span class="pc-num">1</span><strong>Snap</strong><span>Capture a moment that fits the round&rsquo;s theme.</span></li><li><span class="pc-num">2</span><strong>Upload</strong><span>Add your photos before the round closes.</span></li><li><span class="pc-num">3</span><strong>Celebrate</strong><span>Approved photos join the gallery for everyone.</span></li></ol></div>';
       main.appendChild(photo);
+      (async()=>{try{
+        let cur=null;
+        const pv=window.LU_LOCAL_PREVIEW&&window.LU_PREVIEW_DATA&&window.LU_PREVIEW_DATA.currentTheme;
+        if(pv) cur={title:pv.title,end:pv.endsAt};
+        else if(!window.LU_LOCAL_PREVIEW){
+          const {data:{session}}=await sb.auth.getSession(); if(!session) return;
+          const {data}=await sb.from("themes").select("title,starts_at,ends_at").order("starts_at",{ascending:false});
+          const now=new Date(), t=(data||[]).find(x=>new Date(x.starts_at)<=now&&now<new Date(x.ends_at));
+          if(t) cur={title:t.title,end:t.ends_at};
+        }
+        if(!cur) return;
+        const box=document.getElementById("pc-round"); if(!box) return;
+        document.getElementById("pc-round-title").textContent=cur.title;
+        document.getElementById("pc-round-due").textContent="Submit by "+new Date(cur.end).toLocaleDateString("en-US",{month:"long",day:"numeric"});
+        box.hidden=false;
+      }catch(e){console.warn("Photo challenge round unavailable:",e);}})();
       if(homeSections){
         const map={hero:document.getElementById("top"),links:document.getElementById("links"),announcements:document.getElementById("announcements"),videos:document.getElementById("videos"),faq:document.getElementById("faq"),"photo-challenge":photo};
         homeSections.forEach(item=>{const el=map[item.id];if(!el)return;el.hidden=item.enabled===false;main.appendChild(el);});
