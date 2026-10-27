@@ -22,10 +22,23 @@
     if (cfgErr) { console.error(cfgErr); $("current").innerHTML = '<div class="photo-empty-state"><h2>This page couldn\'t load</h2><p>Please refresh and try again in a moment.</p></div>'; $("past").parentElement.hidden = true; return; }
     if (!cfg?.enabled) { $("current").innerHTML = '<div class="photo-empty-state"><h2>This page isn\'t open right now</h2><p>Please check back later, or ask Student Leadership.</p></div>'; $("past").parentElement.hidden = true; return; }
     if (!session) {
-      const { data: anonymous, error } = await sb.auth.signInAnonymously();
-      if (error || !anonymous.session) {
-        console.error("Anonymous photo session could not be created:", error);
-        $("current").innerHTML = '<div class="photo-empty-state"><h2>This page couldn\'t start a visitor session</h2><p>Please try again later, or ask Student Leadership to check the Supabase Anonymous Sign-Ins setting.</p></div>';
+      let anonymous, error;
+      try {
+        ({ data: anonymous, error } = await sb.auth.signInAnonymously());
+      } catch (requestError) {
+        error = requestError;
+      }
+      if (error || !anonymous?.session) {
+        const detail = error?.message || "Supabase did not return a visitor session.";
+        const normalized = detail.toLowerCase();
+        const reason = normalized.includes("captcha")
+          ? "Anonymous sign-in is being blocked by CAPTCHA. This page does not currently request a CAPTCHA token; disable CAPTCHA for anonymous sign-ins or add a CAPTCHA flow."
+          : normalized.includes("anonymous") && (normalized.includes("disabled") || normalized.includes("not enabled"))
+            ? "Anonymous sign-ins are disabled for this Supabase project. Enable Anonymous Sign-Ins in the Supabase Auth settings."
+            : "Check the Supabase Auth settings and network connection, then try again.";
+        console.error("Anonymous photo session could not be created:", error || detail);
+        $("current").innerHTML = `<div class="photo-empty-state"><h2>This page couldn't start a visitor session</h2><p>${esc(reason)}</p><details><summary>Technical details</summary><p>${esc(detail)}</p></details><button class="auth-btn" id="retry-visitor-session" type="button">Try again</button></div>`;
+        $("retry-visitor-session").onclick = () => location.reload();
         $("past").parentElement.hidden = true;
         return;
       }
