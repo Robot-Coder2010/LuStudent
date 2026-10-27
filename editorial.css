@@ -92,6 +92,7 @@ main > section:last-of-type { padding-bottom: var(--section-space); }
   display: grid; grid-template-columns: repeat(4, 1fr); margin-top: clamp(56px, 8vw, 112px);
   border-top: var(--rule); text-align: left;
 }
+.home-shortcuts .hero-index { margin-top: clamp(32px, 4.5vw, 56px); }
 .hero-index a {
   display: block; padding: 18px 0 0; color: var(--navy); text-decoration: none;
   font-family: var(--font-display); font-size: clamp(1.2rem, 2.2vw, 1.9rem);

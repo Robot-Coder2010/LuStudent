@@ -207,6 +207,7 @@ function portalTileForm(t,i){return `<div class="portal-tile-edit"><div class="p
 
 const DEFAULT_HOME_SECTIONS = [
   {id:"hero", label:"Welcome header", enabled:true},
+  {id:"shortcuts", label:"Shortcuts above the tiles", enabled:true},
   {id:"links", label:"Quick-link tiles", enabled:true},
   {id:"announcements", label:"Latest announcements", enabled:true},
   {id:"videos", label:"Latest videos", enabled:true},
@@ -219,9 +220,13 @@ async function homeLayoutUI(host = app) {
     host.innerHTML = (host === app ? tabs() : "") + `<p class="auth-error">Could not load home page settings: ${esc(error.message)}</p>`;
     return;
   }
-  let sections = Array.isArray(st?.portal_home_sections) && st.portal_home_sections.length ? st.portal_home_sections : DEFAULT_HOME_SECTIONS;
-  sections = [...sections.filter(s=>DEFAULT_HOME_SECTIONS.some(d=>d.id===s.id)), ...DEFAULT_HOME_SECTIONS.filter(d=>!sections.some(s=>s.id===d.id))];
-  host.innerHTML = (host === app ? tabs() : "") + `<section class="portal-admin-section"><h3>Home page layout</h3><p>Choose which sections appear on the home page and change their order. The Photo Challenge shortcut gives students a clear path to upload photos. Your existing tiles, announcement banner, and content remain intact.</p>${error ? `<p class="auth-error">Couldn't load settings: ${esc(error.message)}</p>` : ""}<div id="home-section-editor" aria-label="Drag sections to reorder">${sections.map((s)=>`<div class="home-section-edit" data-section="${s.id}" draggable="true"><span class="home-drag-handle" aria-hidden="true">Move</span><label class="inline-check"><input type="checkbox" name="enabled" ${s.enabled!==false?"checked":""}> ${esc(s.label)}</label><span class="home-drag-hint">Drag to reorder</span></div>`).join("")}</div><div class="portal-admin-actions"><button class="auth-btn" id="save-home-layout">Save home page</button></div><small id="home-layout-msg"></small></section>`;
+  let sections = Array.isArray(st?.portal_home_sections) && st.portal_home_sections.length ? st.portal_home_sections.filter(s=>DEFAULT_HOME_SECTIONS.some(d=>d.id===s.id)) : [...DEFAULT_HOME_SECTIONS];
+  DEFAULT_HOME_SECTIONS.filter(d=>!sections.some(s=>s.id===d.id)).forEach(missing=>{
+    const defaultIndex=DEFAULT_HOME_SECTIONS.findIndex(s=>s.id===missing.id);
+    const next=sections.findIndex(s=>DEFAULT_HOME_SECTIONS.findIndex(d=>d.id===s.id)>defaultIndex);
+    sections.splice(next<0?sections.length:next,0,missing);
+  });
+  host.innerHTML = (host === app ? tabs() : "") + `<section class="portal-admin-section"><h3>Home page layout</h3><p>Choose which sections appear on the home page and change their order, including the shortcuts above the tiles. The Photo Challenge shortcut gives students a clear path to upload photos. Your existing tiles, announcement banner, and content remain intact.</p>${error ? `<p class="auth-error">Couldn't load settings: ${esc(error.message)}</p>` : ""}<div id="home-section-editor" aria-label="Drag sections to reorder">${sections.map((s)=>`<div class="home-section-edit" data-section="${s.id}" draggable="true"><span class="home-drag-handle" aria-hidden="true">Move</span><label class="inline-check"><input type="checkbox" name="enabled" ${s.enabled!==false?"checked":""}> ${esc(s.label)}</label><span class="home-drag-hint">Drag to reorder</span></div>`).join("")}</div><div class="portal-admin-actions"><button class="auth-btn" id="save-home-layout">Save home page</button></div><small id="home-layout-msg"></small></section>`;
   if (host === app) wire();
   const editor=document.getElementById("home-section-editor");
   let dragging=null;
