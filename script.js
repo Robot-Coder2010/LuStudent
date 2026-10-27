@@ -55,6 +55,8 @@
           </p>
         </div>
       `;
+    } else if (item.pdfUnavailable) {
+      bodyHtml += '<p class="media-unavailable">This flyer is currently unavailable.</p>';
     }
 
     details.innerHTML = `
@@ -101,6 +103,8 @@
           <video controls preload="metadata" src="${safeSrc}"></video>
         </div>
       `;
+    } else if (item.videoUnavailable) {
+      mediaHtml = '<p class="media-unavailable">This video file is currently unavailable.</p>';
     } else if (item.previewImage) {
       mediaHtml = `
         <div class="video-frame-wrap video-preview-wrap">

@@ -61,8 +61,7 @@
       main.appendChild(photo);
       if(homeSections){
         const map={hero:document.getElementById("top"),links:document.getElementById("links"),announcements:document.getElementById("announcements"),videos:document.getElementById("videos"),faq:document.getElementById("faq"),"photo-challenge":photo};
-        const ordered=[...homeSections].sort((a,b)=>0);
-        ordered.forEach(item=>{const el=map[item.id];if(!el)return;el.hidden=item.enabled===false;main.appendChild(el);});
+        homeSections.forEach(item=>{const el=map[item.id];if(!el)return;el.hidden=item.enabled===false;main.appendChild(el);});
       }
     }
     grid.querySelectorAll(".portal-card-dynamic").forEach(el=>{

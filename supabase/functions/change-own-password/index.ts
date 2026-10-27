@@ -22,6 +22,7 @@ Deno.serve(async (req) => {
     );
     const { data: { user }, error: userError } = await admin.auth.getUser(token);
     if (userError || !user) return json({ error: "Sign-in could not be verified." }, 401);
+    if (user.is_anonymous) return json({ error: "Anonymous visitor sessions cannot set passwords." }, 403);
 
     const body = await req.json();
     if (typeof body.password !== "string" || body.password.length < 8) {

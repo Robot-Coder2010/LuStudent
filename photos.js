@@ -62,15 +62,25 @@
   const sign = async (bucket, paths) => {
     const m = {};
     if (paths.length) {
-      const { data, error } = await sb.storage.from(bucket).createSignedUrls(paths, 3600);
-      if (error) throw error;
-      if (!data || data.length !== paths.length || data.some(u => !u.signedUrl)) {
-        throw new Error("One or more photo links could not be created.");
+      let data;
+      try {
+        const result = await sb.storage.from(bucket).createSignedUrls(paths, 3600);
+        data = result.data;
+        if (result.error) console.error("Some photo files could not be signed:", result.error);
+      } catch (error) {
+        console.error("Photo links could not be requested:", error);
+        data = [];
       }
-      data?.forEach(u => { if (u.signedUrl) m[u.path] = u.signedUrl; });
+      (data ?? []).forEach(u => {
+        if (u.signedUrl) m[u.path] = u.signedUrl;
+        else console.error("Photo file could not be signed:", u.path, u.error);
+      });
+      const signedPaths = new Set((data ?? []).filter(u => u.signedUrl).map(u => u.path));
+      paths.filter(path => !signedPaths.has(path)).forEach(path => console.error("Photo file has no signed URL:", path));
     }
     return m;
   };
+  const missingPhoto = label => `<div class="photo-missing-file" role="img" aria-label="${esc(label)} unavailable">${esc(label)} unavailable</div>`;
   const shrink = f => new Promise((ok, no) => { const i = new Image(); i.onload = () => { const s = Math.min(1, 1600 / Math.max(i.width, i.height)), c = document.createElement("canvas"); c.width = i.width * s; c.height = i.height * s; c.getContext("2d").drawImage(i, 0, 0, c.width, c.height); c.toBlob(ok, "image/jpeg", .85); }; i.onerror = no; i.src = URL.createObjectURL(f); });
 
   async function renderCurrent() {
@@ -83,16 +93,10 @@
       return;
     }
     const mine = mineData ?? [];
-    let urls;
-    try { urls = await sign("photos", mine.map(m => m.image_path)); }
-    catch (signError) {
-      console.error("Photo files could not be loaded:", signError);
-      box.innerHTML = '<div class="photo-empty-state"><h2>Your photo files couldn\'t load</h2><p>Please refresh and try again.</p></div>';
-      return;
-    }
+    const urls = await sign("photos", mine.map(m => m.image_path));
     const label = { approved: "Approved ✓", rejected: "Not approved", pending: "Waiting for review" };
     box.innerHTML = `<div class="photo-round-card"><div class="photo-round-copy"><span class="photo-round-badge"><span class="photo-live-dot"></span> Current round</span><h2>${esc(cur.title)}</h2><p class="photo-round-description">${esc(cur.description || "Share a photo that fits this round's theme.")}</p><div class="photo-deadline"><span aria-hidden="true">${LUIcon("clock", 18)}</span><span><strong>Submit by</strong><br>${new Date(cur.ends_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</span></div><p class="photo-privacy-note">Approved photos will be shared with everyone when the round ends. Your name will appear with your photos.</p></div><div class="photo-upload-panel"><div class="photo-upload-icon" aria-hidden="true">↑</div><h3>Bring your moment to life</h3><p>Choose photos from your device. JPG and PNG work great.</p>${PUB ? '<input id="pname" class="pub-name" maxlength="60" placeholder="Your name (shown with your photos)" autocomplete="name">' : ""}${mine.length < max ? `<label class="photo-upload-button" for="f">Choose photos <span aria-hidden="true">↗</span></label><input class="photo-file-input" type="file" id="f" accept="image/*" multiple><small>${PUB ? `${max - mine.length} of ${max} visitor-session uploads remaining` : `${max - mine.length} of ${max} uploads remaining`}</small>` : `<p class="photo-limit-reached">You've reached the ${max}-photo limit for this round.</p>`}<p id="msg" class="photo-upload-message" role="status"></p></div></div>
-      ${mine.length ? `<div class="photo-submissions"><div class="photo-section-heading"><div><h3>Your submissions</h3><p>Manage the photos you've sent for this round.</p></div><span class="photo-count">${mine.length} / ${max}</span></div><div class="thumbs">${mine.map(m => `<figure><img src="${urls[m.image_path]}" alt="Your submitted photo"><figcaption><span>${label[m.status]}</span><button class="auth-btn alt" data-del="${m.id}" data-p="${esc(m.image_path)}">Remove</button></figcaption></figure>`).join("")}</div></div>` : ""}`;
+      ${mine.length ? `<div class="photo-submissions"><div class="photo-section-heading"><div><h3>Your submissions</h3><p>Manage the photos you've sent for this round.</p></div><span class="photo-count">${mine.length} / ${max}</span></div><div class="thumbs">${mine.map(m => `<figure>${urls[m.image_path] ? `<img src="${urls[m.image_path]}" alt="Your submitted photo">` : missingPhoto("Your submitted photo") }<figcaption><span>${label[m.status]}</span><button class="auth-btn alt" data-del="${m.id}" data-p="${esc(m.image_path)}">Remove</button></figcaption></figure>`).join("")}</div></div>` : ""}`;
     box.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
       if (!confirm("Remove this photo?")) return;
       const { data: deleted, error } = await sb.from("submissions").delete().eq("id", b.dataset.del).select("id").maybeSingle();
@@ -142,20 +146,25 @@
     const { data, error } = await sb.from("submissions").select("*").eq("theme_id", t.id).eq("status", "approved").order("created_at");
     if (error) { alert("Could not load gallery photos: " + error.message); return; }
     const ph = data ?? [];
-    let urls, vid = null;
-    try {
-      urls = await sign("photos", ph.map(p => p.image_path));
-      if (t.video_path) vid = (await sign("media", [t.video_path]))[t.video_path];
-    } catch (signError) { alert("Could not load gallery media: " + signError.message); return; }
+    const urls = await sign("photos", ph.map(p => p.image_path));
+    const vid = t.video_path ? (await sign("media", [t.video_path]))[t.video_path] : null;
     let i = 0, timer = null;
     v.hidden = false; v.scrollIntoView({ behavior: "smooth" });
-    v.innerHTML = `<div class="vh"><h3>${esc(t.title)}</h3><button class="auth-btn alt" id="vc">Close</button></div>${vid ? `<video controls src="${vid}"></video>` : ""}
-      ${ph.length ? `<div class="car"><button id="pv" aria-label="Previous">‹</button><figure><img id="im" alt=""><figcaption id="cp"></figcaption></figure><button id="nx" aria-label="Next">›</button></div>
-      <div class="vh"><button class="auth-btn" id="pl">Play reel</button><button class="auth-btn alt" id="fs">Full screen</button><button class="auth-btn alt" id="mu">Music: on</button></div><h4 class="all-title">All ${ph.length} photo${ph.length === 1 ? "" : "s"} from this theme</h4><div class="thumbs theme-all">${ph.map((x, k) => `<figure><button type="button" class="thumb-btn" data-k="${k}" aria-label="View photo by ${esc(x.submitted_by)}"><img src="${urls[x.image_path]}" alt=""></button><figcaption>${esc(x.submitted_by)}</figcaption></figure>`).join("")}</div>` : "<p>No approved photos for this theme.</p>"}`;
+    v.innerHTML = `<div class="vh"><h3>${esc(t.title)}</h3><button class="auth-btn alt" id="vc">Close</button></div>${vid ? `<video controls src="${vid}"></video>` : t.video_path ? missingPhoto("Video") : ""}
+      ${ph.length ? `<div class="car"><button id="pv" aria-label="Previous">‹</button><figure><img id="im" alt=""><span id="im-missing" class="photo-missing-file" hidden>Photo unavailable</span><figcaption id="cp"></figcaption></figure><button id="nx" aria-label="Next">›</button></div>
+      <div class="vh"><button class="auth-btn" id="pl">Play reel</button><button class="auth-btn alt" id="fs">Full screen</button><button class="auth-btn alt" id="mu">Music: on</button></div><h4 class="all-title">All ${ph.length} photo${ph.length === 1 ? "" : "s"} from this theme</h4><div class="thumbs theme-all">${ph.map((x, k) => `<figure><button type="button" class="thumb-btn" data-k="${k}" aria-label="View photo by ${esc(x.submitted_by)}">${urls[x.image_path] ? `<img src="${urls[x.image_path]}" alt="">` : missingPhoto(`Photo by ${x.submitted_by}`)}</button><figcaption>${esc(x.submitted_by)}</figcaption></figure>`).join("")}</div>` : "<p>No approved photos for this theme.</p>"}`;
     const stop = () => { clearInterval(timer); timer = null; LUMusic.stop(); if ($("pl")) $("pl").textContent = "Play reel"; };
     $("vc").onclick = () => { stop(); document.fullscreenElement && document.exitFullscreen(); v.hidden = true; };
     if (!ph.length) return;
-    const go = d => { i = (i + d + ph.length) % ph.length; $("im").src = urls[ph[i].image_path]; $("cp").textContent = `${ph[i].submitted_by} · ${i + 1}/${ph.length}`; };
+    const go = d => {
+      i = (i + d + ph.length) % ph.length;
+      const url = urls[ph[i].image_path];
+      $("im").hidden = !url;
+      $("im-missing").hidden = !!url;
+      if (url) $("im").src = url;
+      else $("im").removeAttribute("src");
+      $("cp").textContent = `${ph[i].submitted_by} · ${i + 1}/${ph.length}`;
+    };
     go(0);
     $("mu").onclick = () => { LUMusic.enabled = !LUMusic.enabled; $("mu").textContent = "Music: " + (LUMusic.enabled ? "on" : "off"); if (timer) LUMusic.enabled ? LUMusic.start() : LUMusic.stop(); };
     v.querySelectorAll("[data-k]").forEach(b => b.onclick = () => { stop(); i = +b.dataset.k; go(0); v.querySelector(".car").scrollIntoView({ behavior: "smooth", block: "center" }); });

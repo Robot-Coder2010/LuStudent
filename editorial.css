@@ -361,8 +361,32 @@ h1, h2, h3, h4, .section-title, .page-title, .card-title, .brand-name, .footer-b
 .photo-style-content:not(.announcements-page):not(.videos-page) .photo-empty-state {
   border-top: 0 !important;
 }
+.photo-style-content:not(.announcements-page):not(.videos-page) .photo-round-card {
+  padding-top: 0;
+}
 .photo-style-content:not(.announcements-page):not(.videos-page) .photo-current {
   margin-top: 0 !important;
+}
+.photo-missing-file {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  width: 100%;
+  padding: 1rem;
+  background: var(--tint);
+  color: var(--stone);
+  text-align: center;
+  font-size: .85rem;
+}
+.thumbs .photo-missing-file {
+  aspect-ratio: 1;
+  min-height: 0;
+  padding: .5rem;
+}
+.media-unavailable {
+  color: var(--stone);
+  font-size: .9rem;
+  font-style: italic;
 }
 
 /* Compact interior-page banners and keep the photo callout visually grouped. */

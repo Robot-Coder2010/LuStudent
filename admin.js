@@ -20,6 +20,10 @@ const ytId = v => {
 
 async function boot() {
   const { data: { session } } = await sb.auth.getSession();
+  if (String(session?.user?.app_metadata?.must_change_password).toLowerCase() === "true") {
+    location.replace("change-password.html?next=" + encodeURIComponent("admin.html"));
+    return;
+  }
   if (!session) return app.innerHTML = '<p>Please sign in with your admin account.</p><button class="auth-btn" id="g">Sign in</button>',
     document.getElementById("g").onclick = () => (location.href = "login.html?next=" + encodeURIComponent(location.pathname.split("/").pop() || "index.html"));
   let role = (await sb.rpc("my_role")).data;
@@ -271,15 +275,29 @@ async function photosSection() {
   if (subsError) { box.innerHTML = `<p class="auth-error">Could not load submissions: ${esc(subsError.message)}</p>`; return; }
   const urls = {};
   if (subs.length) {
-    const { data: signed, error } = await sb.storage.from("photos").createSignedUrls(subs.map(s => s.image_path), 3600);
-    if (error) { box.innerHTML = `<p class="auth-error">Could not load photo files: ${esc(error.message)}</p>`; return; }
-    if (!signed || signed.length !== subs.length || signed.some(file => !file.signedUrl)) { box.innerHTML = "<p class=\"auth-error\">One or more photo links could not be created. Refresh and try again.</p>"; return; }
-    signed?.forEach(u => { if (u.signedUrl) urls[u.path] = u.signedUrl; });
+    let signed;
+    try {
+      const { data, error } = await sb.storage.from("photos").createSignedUrls(subs.map(s => s.image_path), 3600);
+      signed = data;
+      if (error) console.error("Some moderation photo files could not be signed:", error);
+    } catch (error) {
+      console.error("Moderation photo links could not be requested:", error);
+      signed = [];
+    }
+    (signed ?? []).forEach(file => {
+      if (file.signedUrl) urls[file.path] = file.signedUrl;
+      else console.error("Moderation photo file could not be signed:", file.path, file.error);
+    });
+    const signedPaths = new Set((signed ?? []).filter(file => file.signedUrl).map(file => file.path));
+    subs.filter(submission => !signedPaths.has(submission.image_path))
+      .forEach(submission => console.error("Moderation photo file has no signed URL:", submission.image_path));
   }
   const opts = id => th.map(t => `<option value="${t.id}" ${t.id === id ? "selected" : ""}>${esc(t.title)} (${new Date(t.starts_at).toLocaleDateString()})</option>`).join("");
   const grp = st => subs.filter(s => s.status === st), pend = grp("pending"), appr = grp("approved"), rej = grp("rejected");
   const via = s => s.image_path.startsWith("public/") ? ' <span class="via-badge">public page</span>' : "";
-  const img = s => `<img src="${urls[s.image_path]}" alt="">`;
+  const img = s => urls[s.image_path]
+    ? `<img src="${urls[s.image_path]}" alt="">`
+    : '<div class="photo-missing-file" role="img" aria-label="Photo unavailable">Photo unavailable</div>';
   box.innerHTML = `<h3>Photos</h3>
   <label>Theme <select id="ph-ts">${opts(sel)}</select></label>
   <div class="needs-approval ${pend.length ? "has" : ""}"><div class="na-head"><h4>Needs approval</h4><span class="na-count">${pend.length}</span></div>
@@ -391,9 +409,10 @@ async function peopleUI(table, heading, blurb, addLabel, btnText) {
     `<form id="aa"><label>${addLabel}<input type="email" name="e" placeholder="name@latterup.org" required></label><div><button class="auth-btn" type="submit">${btnText}</button></div><small id="msg"></small></form>`;
   wire();
   app.querySelectorAll("[data-rm]").forEach(b => b.onclick = async () => { if (confirm("Remove " + b.dataset.rm + " from " + heading.toLowerCase() + "?")) { const { data, error } = await sb.from(table).delete().eq("email", b.dataset.rm).select("email").maybeSingle(); if (error || !data) return alert("Could not remove " + b.dataset.rm + ": " + (error?.message || "no record was deleted")); peopleUI(table, heading, blurb, addLabel, btnText); } });
-  if (error) return;
   document.getElementById("aa").onsubmit = async e => {
-    e.preventDefault(); const em = e.target.elements.e.value.trim().toLowerCase(), msg = document.getElementById("msg");
+    e.preventDefault(); const msg = document.getElementById("msg");
+    if (error) { msg.textContent = "Could not load this list; fix the listed database error before adding entries."; return; }
+    const em = e.target.elements.e.value.trim().toLowerCase();
     if (!em.endsWith("@latterup.org")) return (msg.textContent = "Use an @latterup.org address.");
     const { error } = await sb.from(table).insert({ email: em }); error ? (msg.textContent = error.message) : peopleUI(table, heading, blurb, addLabel, btnText);
   };

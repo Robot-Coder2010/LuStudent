@@ -46,19 +46,34 @@
       if (v.error) console.error("Videos could not be loaded:", v.error);
       const paths = [...(a.data || []).map(x => x.pdf_path), ...(v.data || []).map(x => x.video_path)].filter(Boolean);
       const urls = {};
-      let mediaError = null;
       if (paths.length) {
-        const { data, error } = await sb.storage.from("media").createSignedUrls(paths, 3600);
-        mediaError = error || (!data || data.length !== paths.length || data.some(u => !u.signedUrl)
-          ? new Error("One or more media links could not be created.")
-          : null);
-        if (!mediaError) data?.forEach(u => { urls[u.path] = u.signedUrl; });
-        if (mediaError) console.error("Announcement/video media could not be signed:", mediaError);
+        let data;
+        try {
+          const result = await sb.storage.from("media").createSignedUrls(paths, 3600);
+          data = result.data;
+          if (result.error) console.error("Some announcement/video files could not be signed:", result.error);
+        } catch (error) {
+          console.error("Announcement/video links could not be requested:", error);
+          data = [];
+        }
+        (data ?? []).forEach(file => {
+          if (file.signedUrl) urls[file.path] = file.signedUrl;
+          else console.error("Announcement/video file could not be signed:", file.path, file.error);
+        });
+        const signedPaths = new Set((data ?? []).filter(file => file.signedUrl).map(file => file.path));
+        paths.filter(path => !signedPaths.has(path))
+          .forEach(path => console.error("Announcement/video file has no signed URL:", path));
       }
       const br = s => esc(s).replace(/(https?:\/\/[^\s<]*[^\s<.,;:!?)])/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>').replace(/\n/g, "<br>");
-      window.ANNOUNCEMENT_ITEMS = (a.data || []).map(x => ({ title: esc(x.title), date: x.date, text: br(x.text), pdfSrc: urls[x.pdf_path] }));
-      window.VIDEO_ITEMS = (v.data || []).map(x => ({ title: esc(x.title), date: x.date, description: br(x.description), youtubeId: x.youtube_id, videoSrc: urls[x.video_path] }));
-      window.LU_CONTENT_ERRORS = { announcements: a.error || mediaError, videos: v.error || mediaError };
+      window.ANNOUNCEMENT_ITEMS = (a.data || []).map(x => ({
+        title: esc(x.title), date: x.date, text: br(x.text), pdfSrc: urls[x.pdf_path],
+        pdfUnavailable: !!x.pdf_path && !urls[x.pdf_path]
+      }));
+      window.VIDEO_ITEMS = (v.data || []).map(x => ({
+        title: esc(x.title), date: x.date, description: br(x.description), youtubeId: x.youtube_id, videoSrc: urls[x.video_path],
+        videoUnavailable: !x.youtube_id && !!x.video_path && !urls[x.video_path]
+      }));
+      window.LU_CONTENT_ERRORS = { announcements: a.error, videos: v.error };
     }
   }
 

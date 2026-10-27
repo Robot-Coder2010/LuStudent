@@ -49,6 +49,11 @@
     return;
   }
   const { data: { session } } = await sb.auth.getSession();
+  if (String(session?.user?.app_metadata?.must_change_password).toLowerCase() === "true"
+      && !["change-password.html", "login.html"].includes(page.toLowerCase())) {
+    location.replace("change-password.html?next=" + encodeURIComponent(page));
+    return;
+  }
   if (!session) {
     const previewOption = window.LU_LOCAL_HOST ? '<button id="preview-toggle" type="button">Use local preview</button>' : "";
     $("pf").innerHTML = `<button class="icon-btn avatar" id="pb" aria-label="Profile menu" aria-haspopup="true">?</button><div class="menu" id="pm"><div class="who"><b>Not signed in</b></div><a href="#" id="si">Sign in</a>${previewOption}<button id="th" class="theme-menu-toggle" type="button"></button></div>`;

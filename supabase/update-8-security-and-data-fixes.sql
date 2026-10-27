@@ -1,5 +1,10 @@
 -- Apply after update-7-bug-fixes.sql.
 -- Closes the remaining RLS, scheduled-content, YouTube, and metadata gaps.
+-- Deploy the change-own-password Edge Function before running this migration.
+-- If this migration was run first, restore access with:
+-- update auth.users
+--    set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) - 'must_change_password'
+--  where lower(coalesce(raw_app_meta_data->>'must_change_password', 'false')) = 'true';
 
 drop policy if exists "admins admin manage" on public.admins;
 create policy "admins admin manage" on public.admins for all to authenticated
@@ -54,15 +59,15 @@ create policy "media view" on storage.objects for select to authenticated using 
     or public.is_leader()
     or exists (
       select 1 from public.announcements a
-      where a.pdf_path = name and a.publish_at <= now()
+      where a.pdf_path = name and a.publish_at <= now() and public.is_lu()
     )
     or exists (
       select 1 from public.videos v
-      where v.video_path = name and v.publish_at <= now()
+      where v.video_path = name and v.publish_at <= now() and public.is_lu()
     )
     or exists (
       select 1 from public.themes t
-      where t.video_path = name and t.ends_at <= now()
+      where t.video_path = name and t.ends_at <= now() and public.is_lu()
     )
   )
 );
@@ -121,6 +126,17 @@ create policy "photos delete own folder" on storage.objects for delete to authen
       )
     )
     or (
+      (
+        public.is_lu()
+        or (
+          auth.jwt()->>'is_anonymous' = 'true'
+          and public.public_photo_page_enabled()
+        )
+      )
+      and (storage.foldername(name))[1] = auth.uid()::text
+      and array_length(storage.foldername(name), 1) = 1
+    )
+    or (
       auth.jwt()->>'is_anonymous' = 'true'
       and public.public_photo_page_enabled()
       and (storage.foldername(name))[1] = 'public'
@@ -139,7 +155,7 @@ returns boolean
 language plpgsql security definer set search_path = public, storage as $$
 declare
   cap int;
-  uploads int;
+  submissions_count int;
   folder_prefix text;
 begin
   if auth.uid() is null or theme_path is null then return false; end if;
@@ -158,9 +174,10 @@ begin
 
   perform pg_advisory_xact_lock(hashtextextended(folder_prefix, 0));
   select s.max_photos_per_theme into cap from public.settings s where s.id = 1;
-  select count(*) into uploads from storage.objects o
-   where o.bucket_id = 'photos' and o.name like folder_prefix || '%';
-  return coalesce(uploads, 0) < coalesce(cap, 0);
+  select count(*) into submissions_count
+    from public.submissions s
+   where s.user_id = auth.uid() and s.theme_id::text = theme_path;
+  return coalesce(submissions_count, 0) < coalesce(cap, 0);
 end $$;
 revoke all on function public.can_upload_photo(text, boolean) from public, anon, authenticated;
 grant execute on function public.can_upload_photo(text, boolean) to authenticated;

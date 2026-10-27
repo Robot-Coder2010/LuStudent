@@ -1,3 +1,13 @@
+[build]
+  command = "node netlify-build.cjs"
+  publish = "dist"
+
+[[redirects]]
+  from = "/PLACEHOLDER/*"
+  to = "/404.html"
+  status = 404
+  force = true
+
 [[redirects]]
   from = "/supabase/*"
   to = "/404.html"
@@ -9,3 +19,8 @@
   to = "/404.html"
   status = 404
   force = true
+
+[[headers]]
+  for = "/photos.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
