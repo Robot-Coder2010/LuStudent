@@ -2,6 +2,8 @@
 Static site (Netlify) + Supabase (login, database, file storage).
 Content is edited at `/admin.html` — no code changes needed. For a new database, run `supabase/setup.sql`, then `supabase/update-2-names.sql`, `supabase/update-4-portal-customization.sql`, `supabase/update-5a-leadership-team.sql`, `supabase/update-5b-email-alerts.sql`, `supabase/update-6-students-list.sql`, `supabase/update-7-bug-fixes.sql`, and `supabase/update-8-security-and-data-fixes.sql` in order. Existing databases should apply any missing updates in order. The last updates add scheduled publishing rules, public portal settings, secure video IDs, and other RLS fixes.
 
+For an existing database that already ran `setup.sql`, you can run `supabase/existing-project-all-updates.sql` once instead of running the individual update scripts. It combines updates 2 and 4 through 8 in order, and is not for a new project. Before running it, deploy the `change-own-password` Edge Function as described below. The bundle does not deploy Edge Functions or change Supabase Auth settings.
+
 Before applying `supabase/update-8-security-and-data-fixes.sql`, deploy the `change-own-password` Edge Function from `supabase/functions/`. Update 8 migrates forced-password-change flags into protected app metadata; flagged users cannot access the site until that function is deployed and available. If update 8 was run before deploying the function, restore access with:
 
 ```sql

@@ -419,7 +419,24 @@ async function peopleUI(table, heading, blurb, addLabel, btnText) {
     if (error) { msg.textContent = "Could not load this list; fix the listed database error before adding entries."; return; }
     const em = e.target.elements.e.value.trim().toLowerCase();
     if (!em.endsWith("@latterup.org")) return (msg.textContent = "Use an @latterup.org address.");
-    const { error } = await sb.from(table).insert({ email: em }); error ? (msg.textContent = error.message) : peopleUI(table, heading, blurb, addLabel, btnText);
+    const form=e.target, button=form.querySelector('button[type="submit"]');
+    button.disabled=true; msg.textContent="Adding…";
+    try {
+      const { error: insertError } = await sb.from(table).insert({ email: em });
+      if (insertError) {
+        const update=table==="admins"?"supabase/update-8-security-and-data-fixes.sql":"supabase/update-5a-leadership-team.sql";
+        msg.textContent=`Could not add ${em}: ${insertError.message}. If this is a permission or missing-table error, run ${update} in Supabase SQL Editor.`;
+        console.error(`Could not add ${em} to ${table}:`,insertError);
+        return;
+      }
+      msg.textContent=`Added ${em}.`;
+      await peopleUI(table, heading, blurb, addLabel, btnText);
+    } catch (insertError) {
+      console.error(`Could not add ${em} to ${table}:`,insertError);
+      msg.textContent=`Could not add ${em}: ${insertError.message || "Unexpected error."}`;
+    } finally {
+      if(button.isConnected) button.disabled=false;
+    }
   };
 }
 
