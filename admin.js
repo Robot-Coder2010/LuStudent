@@ -7,7 +7,9 @@ const T = {
   themes: { label: "Photo Challenge", order: "starts_at", title: "title", f: [["title", "Theme"], ["description", "Description", "textarea"], ["starts_at", "Starts", "datetime"], ["ends_at", "Ends (next theme starts then)", "datetime"], ["video_path", "Finished video (optional)", "file", "video/mp4,video/webm"]] },
 };
 const LEADERSHIP_CHART_ROLES = ["Opening Prayer", "Spiritual Thought", "Do you know them?", "Closing Prayer"];
+const DEFAULT_ADMIN_TAB_ORDER = ["announcements", "videos", "themes", "_h", "home", "_i", "_s", "_a", "_l", "_n"];
 let cur = "announcements", ROLE = "student";
+let ADMIN_TAB_ORDER = DEFAULT_ADMIN_TAB_ORDER.slice(), ADMIN_TAB_ORDER_ERROR = "";
 const loc = v => { const d = new Date(v); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16); };
 const isValidTimeZone = value => {
   try { new Intl.DateTimeFormat("en-US", { timeZone: value }).format(); return true; }
@@ -41,16 +43,70 @@ async function boot() {
   if (!role) role = (await sb.rpc("is_admin")).data ? "admin" : "student";
   ROLE = role;
   if (role !== "admin" && role !== "leader") return app.innerHTML = "<p>This account isn't an admin or part of Student Leadership. Ask an admin to add your email.</p>";
+  if (role === "admin") {
+    const { data: settings, error } = await sb.from("leadership_hub_settings").select("admin_tab_order").eq("id", 1).single();
+    if (error) {
+      ADMIN_TAB_ORDER_ERROR = `Tab order couldn't be loaded. Run update-10-student-leadership-hub.sql. (${error.message})`;
+      console.error(ADMIN_TAB_ORDER_ERROR);
+    } else if (Array.isArray(settings.admin_tab_order)) {
+      ADMIN_TAB_ORDER = [...new Set(settings.admin_tab_order.filter(id => DEFAULT_ADMIN_TAB_ORDER.includes(id)))];
+    }
+  }
   show();
 }
 function tabs() {
   const keys = ROLE === "admin" ? Object.keys(T).filter(k => k !== "faq") : ["announcements", "videos", "themes"];
-  const btn = (id, label) => `<button class="auth-btn alt ${cur === id ? "on" : ""}" data-t="${id}">${label}</button>`;
-  return "<nav>" + keys.map(k => btn(k, T[k].label)).join("") +
-    (ROLE === "admin" ? btn("_h", "Student Leadership") + btn("home", "Home Page") + btn("_i", "Import students") + btn("_s", "Students") + btn("_a", "Admins") + btn("_l", "Manage members") + btn("_n", "Email alerts") : "") + "</nav>" +
+  const entries = keys.map(key => ({ id: key, label: T[key].label }));
+  if (ROLE === "admin") entries.push(
+    { id: "_h", label: "Student Leadership" }, { id: "home", label: "Home Page" },
+    { id: "_i", label: "Import students" }, { id: "_s", label: "Students" },
+    { id: "_a", label: "Admins" }, { id: "_l", label: "Manage members" },
+    { id: "_n", label: "Email alerts" }
+  );
+  const entryMap = new Map(entries.map(entry => [entry.id, entry]));
+  const preferredOrder = ROLE === "admin" ? ADMIN_TAB_ORDER : entries.map(entry => entry.id);
+  const ordered = [...preferredOrder.filter(id => entryMap.has(id)), ...entries.map(entry => entry.id).filter(id => !preferredOrder.includes(id))]
+    .map(id => entryMap.get(id));
+  const btn = ({ id, label }) => `<button class="auth-btn alt ${cur === id ? "on" : ""}" data-t="${id}" ${ROLE === "admin" ? 'draggable="true" title="Drag to reorder tabs"' : ""}>${label}</button>`;
+  return "<nav aria-label=\"Admin tools\">" + ordered.map(btn).join("") + "</nav>" +
+    (ADMIN_TAB_ORDER_ERROR ? `<small class="auth-error">${esc(ADMIN_TAB_ORDER_ERROR)}</small>` : "") +
     (ROLE === "leader" ? '<p class="role-note"><small>Student Leadership access: you can add announcements, videos and photo themes, and approve or reject photos.</small></p>' : "");
 }
-function wire() { app.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { cur = b.dataset.t; show(); }); }
+function wire() {
+  app.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { cur = b.dataset.t; show(); });
+  if (ROLE !== "admin") return;
+  const nav = app.querySelector(".adm nav");
+  if (!nav) return;
+  let draggedTab = null;
+  nav.querySelectorAll("[data-t]").forEach(button => {
+    button.ondragstart = event => {
+      draggedTab = button;
+      button.classList.add("dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", button.dataset.t);
+    };
+    button.ondragend = () => { button.classList.remove("dragging"); draggedTab = null; };
+  });
+  nav.ondragover = event => {
+    if (event.target.closest("[data-t]")) event.preventDefault();
+  };
+  nav.ondrop = async event => {
+    event.preventDefault();
+    const target = event.target.closest("[data-t]");
+    if (!draggedTab || !target || target === draggedTab) return;
+    const buttons = [...nav.querySelectorAll("[data-t]")];
+    if (buttons.indexOf(draggedTab) < buttons.indexOf(target)) target.after(draggedTab);
+    else target.before(draggedTab);
+    const order = [...nav.querySelectorAll("[data-t]")].map(button => button.dataset.t);
+    const { error } = await sb.from("leadership_hub_settings").update({ admin_tab_order: order }).eq("id", 1);
+    if (error) {
+      alert(`Could not save tab order: ${error.message}`);
+      show();
+      return;
+    }
+    ADMIN_TAB_ORDER = order;
+  };
+}
 
 async function show(editRow) {
   if (ROLE !== "admin" && !["announcements", "videos", "themes"].includes(cur)) cur = "announcements";
@@ -472,7 +528,7 @@ async function studentLeadershipUI() {
   });
   app.innerHTML = tabs() + `<h2>Student Leadership management</h2>
     <form id="lh-settings" class="admin-schedule">
-      <h3>Hub visibility, weekly roles and chat points</h3>
+      <h3>Hub visibility and weekly roles</h3>
       <label>Student Leadership tab access
         <select name="visibility">
           <option value="off" ${settings.visibility === "off" ? "selected" : ""}>Off</option>
@@ -483,11 +539,12 @@ async function studentLeadershipUI() {
       <label>Change role assignments on (UTC)
         <select name="rotation_weekday">${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((day, index) => `<option value="${index}" ${settings.rotation_weekday === index ? "selected" : ""}>${day}</option>`).join("")}</select>
       </label>
-      <label>Points for each approved chat report<input name="approval_points" type="number" min="0" max="10000" value="${settings.approval_points}" required></label>
       <div><button class="auth-btn" type="submit">Save settings</button></div><small id="lh-settings-message"></small>
     </form>
-    <section class="leadership-admin-section"><h3>Weekly role chart assignments</h3>
+    <details class="leadership-admin-section leadership-admin-collapsible">
+      <summary>Weekly role chart assignments</summary>
       <p>Choose the roles each member can rotate through and who is included in the chart. These controls do not remove anyone from Student Leadership.</p>
+      <button class="auth-btn alt" type="button" id="lh-shuffle-roles">Shuffle role order</button>
       <div id="lh-member-list">${members.map(member => `<article class="leadership-member-admin" data-member="${esc(member.email)}">
         <label>Display name<input data-display-name maxlength="120" value="${esc(member.display_name)}"></label>
         <label>Rotation order<input data-sort-order type="number" step="1" value="${member.sort_order}"></label>
@@ -495,13 +552,18 @@ async function studentLeadershipUI() {
         <fieldset><legend>Eligible roles</legend>${roles.map(role => `<label class="chk"><input data-member-role type="checkbox" value="${role.id}" ${(roleIdsByMember.get(member.email) || []).includes(role.id) ? "checked" : ""}> ${esc(role.name)}</label>`).join("") || "<small>Run update-10-student-leadership-hub.sql to add the chart roles.</small>"}</fieldset>
         <button class="auth-btn" type="button" data-save-member>Save member</button><small data-member-message></small>
       </article>`).join("") || "<p>No Student Leadership members have been added yet.</p>"}</div>
-    </section>
+    </details>
     <section class="leadership-admin-section"><h3>Chat reports awaiting approval</h3><div id="lh-report-queue"></div></section>
     <section class="leadership-admin-section"><h3>Prize catalog</h3>
       <form id="lh-add-prize"><label>Prize name<input name="name" maxlength="120" required></label><label>Description<textarea name="description" rows="2"></textarea></label><label>Points required<input name="points_cost" type="number" min="1" max="100000" required></label><button class="auth-btn" type="submit">Add prize</button><small id="lh-prize-message"></small></form>
       <div id="lh-prize-list"></div>
     </section>
-    <section class="leadership-admin-section"><h3>Prize requests awaiting approval</h3><div id="lh-claim-queue"></div></section>`;
+    <section class="leadership-admin-section"><h3>Prize requests awaiting approval</h3><div id="lh-claim-queue"></div></section>
+    <form id="lh-points-settings" class="leadership-admin-section">
+      <h3>Chat report points</h3>
+      <label>Points for each approved chat report<input name="approval_points" type="number" min="0" max="10000" value="${settings.approval_points}" required></label>
+      <button class="auth-btn" type="submit">Save points</button><small id="lh-points-message"></small>
+    </form>`;
   wire();
 
   const settingsForm = document.getElementById("lh-settings"), settingsMessage = document.getElementById("lh-settings-message");
@@ -511,9 +573,35 @@ async function studentLeadershipUI() {
     const { error } = await sb.from("leadership_hub_settings").update({
       visibility: form.visibility.value,
       rotation_weekday: Number(form.rotation_weekday.value),
-      approval_points: Number(form.approval_points.value),
     }).eq("id", 1);
     settingsMessage.textContent = error ? `Could not save settings: ${error.message}` : "Settings saved.";
+  };
+  document.getElementById("lh-points-settings").onsubmit = async event => {
+    event.preventDefault();
+    const form = event.target.elements, message = document.getElementById("lh-points-message");
+    const { error } = await sb.from("leadership_hub_settings").update({
+      approval_points: Number(form.approval_points.value),
+    }).eq("id", 1);
+    message.textContent = error ? `Could not save points: ${error.message}` : "Points setting saved.";
+  };
+  document.getElementById("lh-shuffle-roles").onclick = async event => {
+    const button = event.currentTarget;
+    const shuffledRoles = roles.slice();
+    for (let index = shuffledRoles.length - 1; index > 0; index--) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [shuffledRoles[index], shuffledRoles[swapIndex]] = [shuffledRoles[swapIndex], shuffledRoles[index]];
+    }
+    if (shuffledRoles.length !== LEADERSHIP_CHART_ROLES.length) {
+      alert("The four chart roles could not be loaded. Run update-10-student-leadership-hub.sql.");
+      return;
+    }
+    if (shuffledRoles.every((role, index) => role.id === roles[index].id)) {
+      shuffledRoles.push(shuffledRoles.shift());
+    }
+    button.disabled = true;
+    const { error } = await sb.rpc("set_leadership_chart_role_order", { p_role_ids: shuffledRoles.map(role => role.id) });
+    if (error) { alert(`Could not shuffle role order: ${error.message}`); button.disabled = false; return; }
+    await studentLeadershipUI();
   };
   document.querySelectorAll("[data-save-member]").forEach(button => button.onclick = async () => {
     const card = button.closest("[data-member]"), email = card.dataset.member, message = card.querySelector("[data-member-message]");
@@ -614,10 +702,13 @@ async function homeTabUI() {
   await listUI("faq", document.getElementById("hp-faq"));
 }
 
-async function studentsUI() {
+async function studentsUI(notice = "") {
   const { data, error } = await sb.rpc("list_students");
   const students = data ?? [];
-  app.innerHTML = tabs() + `<h3>Students</h3><p><small>Everyone who has a login for the portal. To add more people, use the Import students tab.</small></p>${error ? `<p class="auth-error">${esc(error.message)}, run update-6-students-list.sql first.</p>` : ""}
+  const removableCount = students.filter(student => !student.admin_role && !student.leader_role).length;
+  app.innerHTML = tabs() + `<h3>Students</h3><p><small>Everyone who has a login for the portal. To add more people, use the Import students tab. Removing a student permanently deletes their account; they can create it again by signing in with Google.</small></p>${error ? `<p class="auth-error">${esc(error.message)}, run update-6-students-list.sql first.</p>` : ""}
+    ${notice ? `<p class="role-note" role="status">${esc(notice)}</p>` : ""}
+    <p><button class="auth-btn alt" type="button" id="st-remove-all" ${error || removableCount === 0 ? "disabled" : ""}>Remove all students (${removableCount})</button></p>
     <label>Search<input id="st-q" type="search" placeholder="Type a name or email"></label><p><small id="st-count"></small></p><div id="st-list"></div>`;
   wire();
   const list = document.getElementById("st-list"), count = document.getElementById("st-count");
@@ -627,8 +718,27 @@ async function studentsUI() {
     count.textContent = q ? `${rows.length} of ${students.length} people` : `${students.length} people`;
     list.innerHTML = rows.map(s => `<div class="row"><span>${s.full_name ? "<b>" + esc(s.full_name) + "</b> · " : ""}${esc(s.email)}
       ${s.admin_role ? ' <span class="via-badge">Admin</span>' : ""}${s.leader_role ? ' <span class="via-badge">Student Leadership</span>' : ""}${s.must_change_password ? ' <span class="sched-badge">Hasn\'t chosen a password yet</span>' : ""}</span>
-      <small>${s.last_sign_in_at ? "Last sign-in " + esc(new Date(s.last_sign_in_at).toLocaleDateString()) : "Never signed in"}</small></div>`).join("") || "<p><small>No matches.</small></p>";
+      <span><small>${s.last_sign_in_at ? "Last sign-in " + esc(new Date(s.last_sign_in_at).toLocaleDateString()) : "Never signed in"}</small>
+      ${!s.admin_role && !s.leader_role ? `<button class="auth-btn alt" type="button" data-remove-student="${esc(s.email)}">Remove student</button>` : ""}</span></div>`).join("") || "<p><small>No matches.</small></p>";
   };
-  document.getElementById("st-q").oninput = paint; paint();
+  document.getElementById("st-q").oninput = paint;
+  paint();
+  list.querySelectorAll("[data-remove-student]").forEach(button => button.onclick = async () => {
+    const email = button.dataset.removeStudent;
+    if (!confirm(`Permanently delete ${email}'s account? They can sign in with Google again to create a new account.`)) return;
+    button.disabled = true;
+    const { data: deleted, error: deleteError } = await sb.rpc("remove_student_account", { p_email: email });
+    if (deleteError) { alert(`Could not remove ${email}: ${deleteError.message}`); button.disabled = false; return; }
+    await studentsUI(`Removed ${deleted?.[0]?.email || email}.`);
+  });
+  document.getElementById("st-remove-all").onclick = async buttonEvent => {
+    if (!confirm(`Permanently delete all ${removableCount} student accounts? Admin and Student Leadership accounts are protected.`)) return;
+    if (prompt('To confirm permanent deletion of all students, type "DELETE ALL".') !== "DELETE ALL") return;
+    const button = buttonEvent.currentTarget;
+    button.disabled = true;
+    const { data: deleted, error: deleteError } = await sb.rpc("remove_all_student_accounts");
+    if (deleteError) { alert(`Could not remove student accounts: ${deleteError.message}`); button.disabled = false; return; }
+    await studentsUI(`Removed ${deleted?.length || 0} student account${deleted?.length === 1 ? "" : "s"}.`);
+  };
 }
 boot();

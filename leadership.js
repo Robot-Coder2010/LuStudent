@@ -32,8 +32,8 @@
     });
   }
 
-  function renderChart(host, members, weekday) {
-    const assignments = currentAssignments(members, chartRoleNames, rotationWeekIndex(weekday));
+  function renderChart(host, members, roleNames, weekday) {
+    const assignments = currentAssignments(members, roleNames, rotationWeekIndex(weekday));
     host.innerHTML = `<section class="leadership-section leadership-chart-section" aria-labelledby="weekly-chart-title">
       <div class="leadership-section-heading">
         <div><p class="eyebrow">This week's assignments</p><h2 id="weekly-chart-title">Weekly role chart</h2></div>
@@ -110,7 +110,7 @@
         <div id="points-summary">Loading your points…</div>
         <div id="leadership-prizes" class="leadership-prize-grid"></div>
         <div class="leadership-claims"><h3>My prize requests</h3><div id="my-prize-claims"></div></div></section>`;
-    renderChart(document.getElementById("weekly-role-chart"), members, settingsResult.data.rotation_weekday);
+    renderChart(document.getElementById("weekly-role-chart"), members, rolesResult.data.map(item => item.name), settingsResult.data.rotation_weekday);
     await wireReports(session.user);
     await loadRewards(session.user.id);
   }

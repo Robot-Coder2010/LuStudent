@@ -5,10 +5,13 @@ create table if not exists public.leadership_hub_settings (
   id int primary key default 1 check (id = 1),
   rotation_weekday int not null default 1 check (rotation_weekday between 0 and 6),
   approval_points int not null default 1 check (approval_points between 0 and 10000),
-  visibility text not null default 'leaders_admins' check (visibility in ('off', 'admins', 'leaders_admins'))
+  visibility text not null default 'leaders_admins' check (visibility in ('off', 'admins', 'leaders_admins')),
+  admin_tab_order jsonb not null default '[]'::jsonb
 );
 alter table public.leadership_hub_settings
   add column if not exists visibility text not null default 'leaders_admins';
+alter table public.leadership_hub_settings
+  add column if not exists admin_tab_order jsonb not null default '[]'::jsonb;
 alter table public.leadership_hub_settings
   drop constraint if exists leadership_hub_settings_visibility_check;
 alter table public.leadership_hub_settings
@@ -38,7 +41,7 @@ insert into public.leadership_chart_roles (name, sort_order) values
   ('Spiritual Thought', 2),
   ('Do you know them?', 3),
   ('Closing Prayer', 4)
-on conflict (name) do update set sort_order = excluded.sort_order;
+on conflict (name) do nothing;
 
 create table if not exists public.leadership_member_roles (
   member_email text not null references public.leadership_chart_members(email) on delete cascade,
@@ -262,6 +265,54 @@ begin
     from (select distinct unnest(coalesce(p_role_ids, '{}'::uuid[])) as role_id) distinct_roles;
 end $$;
 grant execute on function public.set_leadership_member_roles(text, uuid[]) to authenticated;
+
+create or replace function public.set_leadership_chart_role_order(p_role_ids uuid[])
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Admins only.'; end if;
+  if coalesce(cardinality(p_role_ids), 0) <> 4
+     or (select count(distinct role_id) from unnest(p_role_ids) as roles(role_id)) <> 4
+     or (select count(*) from public.leadership_chart_roles
+          where id = any(p_role_ids)
+            and name in ('Opening Prayer', 'Spiritual Thought', 'Do you know them?', 'Closing Prayer')) <> 4 then
+    raise exception 'Provide each of the four Student Leadership chart roles once.';
+  end if;
+  update public.leadership_chart_roles role
+     set sort_order = requested.position::integer
+    from unnest(p_role_ids) with ordinality as requested(role_id, position)
+   where role.id = requested.role_id;
+end $$;
+grant execute on function public.set_leadership_chart_role_order(uuid[]) to authenticated;
+
+create or replace function public.remove_student_account(p_email text)
+returns table (email text) language plpgsql security definer set search_path = public, auth as $$
+begin
+  if not public.is_admin() then raise exception 'Admins only.'; end if;
+  return query
+    delete from auth.users as target
+     where lower(target.email) = lower(trim(p_email))
+       and lower(target.email) like '%@latterup.org'
+       and not exists (select 1 from public.admins a where lower(a.email) = lower(target.email))
+       and not exists (select 1 from public.leadership l where lower(l.email) = lower(target.email))
+    returning target.email::text;
+  if not found then raise exception 'Student account was not found or is protected as an Admin or Student Leadership account.'; end if;
+end $$;
+revoke all on function public.remove_student_account(text) from public, anon;
+grant execute on function public.remove_student_account(text) to authenticated;
+
+create or replace function public.remove_all_student_accounts()
+returns table (email text) language plpgsql security definer set search_path = public, auth as $$
+begin
+  if not public.is_admin() then raise exception 'Admins only.'; end if;
+  return query
+    delete from auth.users as target
+     where lower(target.email) like '%@latterup.org'
+       and not exists (select 1 from public.admins a where lower(a.email) = lower(target.email))
+       and not exists (select 1 from public.leadership l where lower(l.email) = lower(target.email))
+    returning target.email::text;
+end $$;
+revoke all on function public.remove_all_student_accounts() from public, anon;
+grant execute on function public.remove_all_student_accounts() to authenticated;
 
 create or replace function public.review_leadership_chat_report(p_report_id uuid, p_decision text)
 returns void language plpgsql security definer set search_path = public as $$
