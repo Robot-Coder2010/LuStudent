@@ -94,7 +94,7 @@
           <h1>Student Leadership</h1><p>A place to serve, connect, and celebrate the ways we show up for one another.</p></div>
         <div class="leadership-hero-mark" aria-hidden="true"><span>LU</span><i></i><i></i><i></i></div>
       </header>
-      <section id="weekly-role-chart"></section>
+      <div id="weekly-role-chart"></div>
       <section class="leadership-section leadership-report-section" id="report-section">
         <div class="leadership-section-heading"><div><p class="eyebrow">Share a moment of connection</p><h2>Report My Chats</h2></div>
           <span class="leadership-section-icon">${LUIcon("camera", 23)}</span></div>

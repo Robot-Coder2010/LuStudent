@@ -7,9 +7,10 @@ const T = {
   themes: { label: "Photo Challenge", order: "starts_at", title: "title", f: [["title", "Theme"], ["description", "Description", "textarea"], ["starts_at", "Starts", "datetime"], ["ends_at", "Ends (next theme starts then)", "datetime"], ["video_path", "Finished video (optional)", "file", "video/mp4,video/webm"]] },
 };
 const LEADERSHIP_CHART_ROLES = ["Opening Prayer", "Spiritual Thought", "Do you know them?", "Closing Prayer"];
-const DEFAULT_ADMIN_TAB_ORDER = ["announcements", "videos", "themes", "_h", "home", "_i", "_s", "_a", "_n"];
+const DEFAULT_ADMIN_TAB_ORDER = ["announcements", "videos", "themes", "_h", "home", "_s", "_a", "_n"];
 let cur = "announcements", ROLE = "student";
 let ADMIN_TAB_ORDER = DEFAULT_ADMIN_TAB_ORDER.slice(), ADMIN_TAB_ORDER_ERROR = "";
+let leadershipAssignmentsOpen = false;
 const hasGoogleIdentity = user => user?.app_metadata?.provider === "google"
   || (Array.isArray(user?.app_metadata?.providers) && user.app_metadata.providers.includes("google"))
   || user?.identities?.some(identity => identity.provider === "google");
@@ -63,8 +64,7 @@ function tabs() {
   const entries = keys.map(key => ({ id: key, label: T[key].label }));
   if (ROLE === "admin") entries.push(
     { id: "_h", label: "Student Leadership" }, { id: "home", label: "Home Page" },
-    { id: "_i", label: "Import students" }, { id: "_s", label: "Students" },
-    { id: "_a", label: "Admins" }, { id: "_n", label: "Email alerts" }
+    { id: "_s", label: "Students" }, { id: "_a", label: "Admins" }, { id: "_n", label: "Email alerts" }
   );
   const entryMap = new Map(entries.map(entry => [entry.id, entry]));
   const preferredOrder = ROLE === "admin" ? ADMIN_TAB_ORDER : entries.map(entry => entry.id);
@@ -115,9 +115,8 @@ async function show(editRow) {
   if (ROLE !== "admin" && !["announcements", "videos", "themes"].includes(cur)) cur = "announcements";
   if (cur === "home") return homeTabUI();
   if (cur === "_s") return studentsUI();
-  if (cur === "_i") return importUI();
   if (cur === "_h") return studentLeadershipUI();
-  if (cur === "_a") return peopleUI("admins", "Admins", "Admins can do everything on the site. The person needs a student account first (Import students).", "Give admin access to", "Make admin");
+  if (cur === "_a") return peopleUI("admins", "Admins", "Admins can do everything on the site. The person needs to sign in with Google once to create their student account first.", "Give admin access to", "Make admin");
   if (cur === "_n") return alertsUI();
   return listUI(cur, app);
 }
@@ -447,31 +446,6 @@ async function photosSection() {
   if (ROLE !== "admin") box.querySelectorAll("[data-edit],[data-x],#ph-man").forEach(e => e.remove());
 }
 
-function importUI() {
-  app.innerHTML = tabs() + `<form id="imp"><h3>Import students</h3>
-  <label>Student list <small>One per line: email, name (a header row is fine). Or choose a CSV file below.</small><textarea name="list" rows="8" placeholder="jane.doe@latterup.org, Jane Doe"></textarea></label>
-  <label>CSV file (optional)<input type="file" name="csv" accept=".csv,.txt"></label>
-  <small>Students sign in with their @latterup.org Google account. Existing accounts are left unchanged.</small>
-  <div><button class="auth-btn" type="submit">Prepare accounts</button></div><div id="res"></div></form>`;
-  wire();
-  const f = document.getElementById("imp").elements, res = document.getElementById("res");
-  f.csv.onchange = async () => { f.list.value = await f.csv.files[0].text(); };
-  const cells = l => [...l.matchAll(/(?:^|,)\s*(?:"([^"]*)"|([^,]*))/g)].map(m => (m[1] ?? m[2] ?? "").trim());
-  document.getElementById("imp").onsubmit = async e => {
-    e.preventDefault();
-    const students = f.list.value.split(/\r?\n/).filter(l => l.trim()).map(cells).filter(c => c[0].toLowerCase() !== "email").map(c => ({ email: c[0], name: c[1] || "" }));
-    if (!students.length) return (res.textContent = "Add at least one student.");
-    const all = []; res.textContent = "Working…";
-    for (let i = 0; i < students.length; i += 20) {
-      const { data, error } = await sb.functions.invoke("import-students", { body: { students: students.slice(i, i + 20) } });
-      if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch {} return (res.innerHTML = "<p class='auth-error'>" + esc(m) + "</p>"); }
-      all.push(...data.results); res.textContent = `Working… ${Math.min(i + 20, students.length)} of ${students.length}`;
-    }
-    const n = s => all.filter(r => r.status === s).length;
-    res.innerHTML = `<p><b>Done.</b> Created ${n("created")}, left alone ${n("exists")}, skipped ${n("skipped")}, failed ${n("failed")}.</p>` +
-      all.filter(r => r.note).map(r => `<small>${esc(r.email)}: ${esc(r.note)}</small><br>`).join("");
-  };
-}
 async function peopleUI(table, heading, blurb, addLabel, btnText) {
   const { data, error } = await sb.from(table).select("email").order("email");
   const rows = data ?? [];
@@ -543,9 +517,10 @@ async function studentLeadershipUI() {
       </label>
       <div><button class="auth-btn" type="submit">Save settings</button></div><small id="lh-settings-message"></small>
     </form>
-    <details class="leadership-admin-section leadership-admin-collapsible">
+    <details class="leadership-admin-section leadership-admin-collapsible" ${leadershipAssignmentsOpen ? "open" : ""}>
       <summary>Weekly role chart assignments</summary>
       <p>Choose the roles each member can rotate through and who is included in the chart. These controls do not remove anyone from Student Leadership.</p>
+      <p class="leadership-admin-role-order"><b>Current chart order:</b> ${roles.map((role, index) => `${index + 1}. ${esc(role.name)}`).join(" · ")}</p>
       <button class="auth-btn alt" type="button" id="lh-shuffle-roles">Shuffle role order</button>
       <div id="lh-member-list">${members.map(member => `<article class="leadership-member-admin" data-member="${esc(member.email)}">
         <label>Display name<input data-display-name maxlength="120" value="${esc(member.display_name)}"></label>
@@ -567,6 +542,8 @@ async function studentLeadershipUI() {
       <button class="auth-btn" type="submit">Save points</button><small id="lh-points-message"></small>
     </form>`;
   wire();
+  const assignmentsDetails = document.querySelector(".leadership-admin-collapsible");
+  assignmentsDetails.addEventListener("toggle", () => { leadershipAssignmentsOpen = assignmentsDetails.open; });
 
   const settingsForm = document.getElementById("lh-settings"), settingsMessage = document.getElementById("lh-settings-message");
   settingsForm.onsubmit = async event => {
@@ -587,6 +564,8 @@ async function studentLeadershipUI() {
     message.textContent = error ? `Could not save points: ${error.message}` : "Points setting saved.";
   };
   document.getElementById("lh-shuffle-roles").onclick = async event => {
+    event.preventDefault();
+    event.stopPropagation();
     const button = event.currentTarget;
     const shuffledRoles = roles.slice();
     for (let index = shuffledRoles.length - 1; index > 0; index--) {
@@ -603,6 +582,7 @@ async function studentLeadershipUI() {
     button.disabled = true;
     const { error } = await sb.rpc("set_leadership_chart_role_order", { p_role_ids: shuffledRoles.map(role => role.id) });
     if (error) { alert(`Could not shuffle role order: ${error.message}`); button.disabled = false; return; }
+    leadershipAssignmentsOpen = true;
     await studentLeadershipUI();
   };
   document.querySelectorAll("[data-save-member]").forEach(button => button.onclick = async () => {
@@ -708,7 +688,7 @@ async function studentsUI(notice = "") {
   const { data, error } = await sb.rpc("list_students");
   const students = data ?? [];
   let removableCount = students.filter(student => !student.admin_role && !student.leader_role).length;
-  app.innerHTML = tabs() + `<h3>Students</h3><p><small>Everyone who has a login for the portal. To add more people, use the Import students tab. Removing a student permanently deletes their account; they can create it again by signing in with Google.</small></p>${error ? `<p class="auth-error">${esc(error.message)}, run update-6-students-list.sql first.</p>` : ""}
+  app.innerHTML = tabs() + `<h3>Students</h3><p><small>Everyone who has signed in to the portal. New accounts are created automatically when they sign in with Google. Removing a student permanently deletes their account; they can create it again by signing in with Google.</small></p>${error ? `<p class="auth-error">${esc(error.message)}, run update-6-students-list.sql first.</p>` : ""}
     ${notice ? `<p class="role-note" role="status">${esc(notice)}</p>` : ""}
     <p><button class="auth-btn alt" type="button" id="st-remove-all" ${error || removableCount === 0 ? "disabled" : ""}>Remove all students (${removableCount})</button></p>
     <label>Search<input id="st-q" type="search" placeholder="Type a name or email"></label><p><small id="st-count"></small></p><div id="st-list"></div>`;

@@ -31,7 +31,7 @@ update auth.users
  where lower(coalesce(raw_app_meta_data->>'must_change_password', 'false')) = 'true';
 ```
 
-Deploy both Supabase Edge Functions in `supabase/functions/`: `import-students` and `change-own-password`. Redeploy `import-students` after updating its source. For the public photo page, Supabase must allow new accounts and **Anonymous Sign-Ins** must be enabled; Supabase treats anonymous visitors as new auth users, so disabling sign-ups globally also blocks visitor sessions. The database trigger restricts accounts to `@latterup.org` addresses. The photo page uses a persistent anonymous session and the photo cap is per visitor session. CAPTCHA is not currently wired into the page; do not enable Supabase CAPTCHA for anonymous sign-ins unless a CAPTCHA token flow has also been added. If you do not want anonymous visitor accounts, keep the public photo page disabled and leave anonymous sign-ins off.
+Deploy the `change-own-password` Edge Function from `supabase/functions/`. For the public photo page, Supabase must allow new accounts and **Anonymous Sign-Ins** must be enabled; Supabase treats anonymous visitors as new auth users, so disabling sign-ups globally also blocks visitor sessions. The database trigger restricts accounts to `@latterup.org` addresses. The photo page uses a persistent anonymous session and the photo cap is per visitor session. CAPTCHA is not currently wired into the page; do not enable Supabase CAPTCHA for anonymous sign-ins unless a CAPTCHA token flow has also been added. If you do not want anonymous visitor accounts, keep the public photo page disabled and leave anonymous sign-ins off.
 
 Update 8 adds the `videos_youtube_id_format` constraint as `NOT VALID` so old invalid rows don't block the migration. Before validating it, find and correct or remove any existing invalid IDs:
 
@@ -41,7 +41,7 @@ select id, youtube_id from public.videos
 alter table public.videos validate constraint videos_youtube_id_format;
 ```
 
-Student accounts are prepared from Admin → Import students for Google sign-in. New accounts are created with confirmed `@latterup.org` email addresses; existing accounts are left unchanged.
+Student accounts are created automatically when they first sign in with their `@latterup.org` Google account. Supabase must allow new sign-ups for first-time sign-ins to create accounts. Admins can add existing accounts to Student Leadership from Admin → Students after the person has signed in once.
 Only edit config.js if the Supabase project changes (anon key is public by design; never use the service_role key).
 
 For local testing, serve the folder over HTTP instead of opening `index.html` directly from disk. From the project folder in PowerShell, run `py -m http.server 8000` (or `python -m http.server 8000`), then visit `http://localhost:8000`. Browsers do not reliably share authentication storage between pages opened with `file://`.
