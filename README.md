@@ -1,8 +1,10 @@
 # Latter UP Student Portal
 Static site (Netlify) + Supabase (login, database, file storage).
-Content is edited at `/admin.html` — no code changes needed. For a new database, run `supabase/setup.sql`, then `supabase/update-2-names.sql`, `supabase/update-4-portal-customization.sql`, `supabase/update-5a-leadership-team.sql`, `supabase/update-5b-email-alerts.sql`, `supabase/update-6-students-list.sql`, `supabase/update-7-bug-fixes.sql`, `supabase/update-8-security-and-data-fixes.sql`, and `supabase/update-9-google-drive-videos.sql` in order. Existing databases should apply any missing updates in order. The latest updates add scheduled publishing rules, public portal settings, Google Drive video embeds, and other RLS fixes.
+Content is edited at `/admin.html` — no code changes needed. For a new database, run `supabase/setup.sql`, then `supabase/update-2-names.sql`, `supabase/update-4-portal-customization.sql`, `supabase/update-5a-leadership-team.sql`, `supabase/update-5b-email-alerts.sql`, `supabase/update-6-students-list.sql`, `supabase/update-7-bug-fixes.sql`, `supabase/update-8-security-and-data-fixes.sql`, `supabase/update-9-google-drive-videos.sql`, and `supabase/update-10-student-leadership-hub.sql` in order. Existing databases should apply any missing updates in order. The latest updates add scheduled publishing rules, public portal settings, Google Drive video embeds, the Student Leadership hub, and other RLS fixes.
 
 The sign-in page uses Google OAuth. To enable Google sign-in, create a Google OAuth client, set its authorized redirect URI to `https://<project-ref>.supabase.co/auth/v1/callback`, then enable Google under Supabase Dashboard → Authentication → Sign In / Providers and enter the client ID and secret. Add the deployed `https://<your-domain>/login.html` URL (and `http://localhost:8000/login.html` for local testing) to Supabase's allowed redirect URLs. The Google button requests `@latterup.org` accounts as a provider hint; database access policies remain the enforcement for private portal data.
+
+The Student Leadership navigation link is shown only to signed-in admins and Student Leadership members. After applying `supabase/update-10-student-leadership-hub.sql`, admins can set the weekly UTC rotation day and chat-report point award, manage chart roles, member order and rotation, approve reports and prize requests, and manage prizes in Admin → Student Leadership. Chat screenshots are stored in a private bucket; only their submitter and admins can view them. Redeploy the updated site files after applying the SQL.
 
 Removing email/password from the website login page requires no SQL. To disable password sign-in project-wide, change the Email provider in Supabase Dashboard → Authentication → Sign In / Providers; do not disable global sign-ups, because anonymous sign-ins for the public photo page depend on them.
 
@@ -19,7 +21,7 @@ update auth.users
    );
 ```
 
-For an existing database that already ran `setup.sql`, you can run `supabase/existing-project-all-updates.sql` once instead of running the individual update scripts. It combines updates 2 and 4 through 9 in order, and is not for a new project. Before running it, deploy the `change-own-password` Edge Function as described below. The bundle does not deploy Edge Functions or change Supabase Auth settings.
+For an existing database that already ran `setup.sql`, you can run `supabase/existing-project-all-updates.sql` once instead of running updates 2 and 4 through 9 individually, then run `supabase/update-10-student-leadership-hub.sql`. The bundle is not for a new project. Before running it, deploy the `change-own-password` Edge Function as described below. The bundle does not deploy Edge Functions or change Supabase Auth settings.
 
 Before applying `supabase/update-8-security-and-data-fixes.sql`, deploy the `change-own-password` Edge Function from `supabase/functions/`. Update 8 migrates forced-password-change flags into protected app metadata; flagged users cannot access the site until that function is deployed and available. If update 8 was run before deploying the function, restore access with:
 

@@ -16,7 +16,7 @@
     ["home", "Home page"],
     ["students", "Students"],
     ["admins", "Admins"],
-    ["leadership", "Leadership team"],
+    ["leadership", "Student Leadership"],
     ["alerts", "Email alerts"],
   ];
   let selected = "announcements";

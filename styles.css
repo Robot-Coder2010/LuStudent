@@ -953,6 +953,34 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 .photo-upload-button { color: var(--cream) !important; }
 .adm nav .on { color: #17264F; }
 
+.leadership-hub { max-width: 860px; }
+.leadership-hero { padding: 1.5rem 0; }
+.leadership-card,.leadership-section,.leadership-admin-section,.leadership-member-admin,.leadership-review-card,.leadership-prize-card {
+  margin: 1rem 0; padding: 1.25rem; border: 1px solid var(--stone-line); border-radius: 14px; background: var(--surface);
+}
+.leadership-card { text-align: center; }
+.leadership-card h2 { margin: .35rem 0; }
+.leadership-member-email { color: var(--stone); }
+.leadership-role-list { display:flex; flex-wrap:wrap; justify-content:center; gap:.4rem; margin:1rem 0; }
+.leadership-carousel-controls { display:flex; align-items:center; justify-content:center; gap:1rem; margin-top:1.25rem; }
+.leadership-section h2,.leadership-admin-section h3 { margin-top:0; }
+.leadership-form { display:grid; gap:.8rem; }
+.leadership-form label,.leadership-member-admin>label { display:grid; gap:.3rem; font-weight:600; }
+.leadership-prize-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:1rem; }
+.leadership-prize-card { margin:0; }
+.leadership-prize-card h3 { margin-top:0; }
+.leadership-list-row { display:flex; justify-content:space-between; align-items:center; gap:1rem; padding:.75rem 0; border-bottom:1px solid var(--stone-line); }
+.leadership-member-admin { display:grid; gap:.8rem; }
+.leadership-member-admin fieldset { display:flex; flex-wrap:wrap; gap:.7rem; border:1px solid var(--stone-line); border-radius:8px; }
+.leadership-member-admin fieldset label { display:flex; align-items:center; gap:.35rem; }
+.leadership-review-card { display:grid; gap:.8rem; }
+.leadership-review-card img { display:block; max-width:min(100%,520px); max-height:420px; object-fit:contain; border-radius:8px; }
+.leadership-review-card>div:last-child { display:flex; flex-wrap:wrap; gap:.5rem; }
+@media(max-width:600px) {
+  .leadership-list-row { align-items:flex-start; flex-direction:column; }
+  .leadership-member-admin fieldset { display:grid; }
+}
+
 /* merged Photo Challenge admin tab + gallery of all photos in a theme */
 #photos-section { margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--stone-line); }
 .thumb-btn { display: block; width: 100%; padding: 0; border: 0; background: none; cursor: pointer; border-radius: 9px; }

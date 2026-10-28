@@ -39,15 +39,15 @@ async function boot() {
   let role = (await sb.rpc("my_role")).data;
   if (!role) role = (await sb.rpc("is_admin")).data ? "admin" : "student";
   ROLE = role;
-  if (role !== "admin" && role !== "leader") return app.innerHTML = "<p>This account isn't an admin or on the leadership team. Ask an admin to add your email.</p>";
+  if (role !== "admin" && role !== "leader") return app.innerHTML = "<p>This account isn't an admin or part of Student Leadership. Ask an admin to add your email.</p>";
   show();
 }
 function tabs() {
   const keys = ROLE === "admin" ? Object.keys(T).filter(k => k !== "faq") : ["announcements", "videos", "themes"];
   const btn = (id, label) => `<button class="auth-btn alt ${cur === id ? "on" : ""}" data-t="${id}">${label}</button>`;
   return "<nav>" + keys.map(k => btn(k, T[k].label)).join("") +
-    (ROLE === "admin" ? btn("home", "Home Page") + btn("_i", "Import students") + btn("_s", "Students") + btn("_a", "Admins") + btn("_l", "Leadership team") + btn("_n", "Email alerts") : "") + "</nav>" +
-    (ROLE === "leader" ? '<p class="role-note"><small>Leadership access: you can add announcements, videos and photo themes, and approve or reject photos.</small></p>' : "");
+    (ROLE === "admin" ? btn("_h", "Student Leadership") + btn("home", "Home Page") + btn("_i", "Import students") + btn("_s", "Students") + btn("_a", "Admins") + btn("_l", "Manage members") + btn("_n", "Email alerts") : "") + "</nav>" +
+    (ROLE === "leader" ? '<p class="role-note"><small>Student Leadership access: you can add announcements, videos and photo themes, and approve or reject photos.</small></p>' : "");
 }
 function wire() { app.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { cur = b.dataset.t; show(); }); }
 
@@ -56,8 +56,9 @@ async function show(editRow) {
   if (cur === "home") return homeTabUI();
   if (cur === "_s") return studentsUI();
   if (cur === "_i") return importUI();
+  if (cur === "_h") return studentLeadershipUI();
   if (cur === "_a") return peopleUI("admins", "Admins", "Admins can do everything on the site. The person needs a student account first (Import students).", "Give admin access to", "Make admin");
-  if (cur === "_l") return peopleUI("leadership", "Leadership team", "Leadership can add announcements, videos and photo themes and approve or reject photos, but can't edit or delete anything, and can't change settings. They get the new-photo emails. They need a student account first (Import students).", "Add a leadership member", "Add to leadership team");
+  if (cur === "_l") return peopleUI("leadership", "Student Leadership", "Student Leadership can add announcements, videos and photo themes and approve or reject photos, but can't edit or delete anything, and can't change settings. They get the new-photo emails. They need a student account first (Import students).", "Add a Student Leadership member", "Add to Student Leadership");
   if (cur === "_n") return alertsUI();
   return listUI(cur, app);
 }
@@ -446,11 +447,159 @@ async function peopleUI(table, heading, blurb, addLabel, btnText) {
     }
   };
 }
+async function studentLeadershipUI() {
+  const [settingsResult, membersResult, rolesResult, assignmentResult, reportsResult, prizesResult, claimsResult] = await Promise.all([
+    sb.from("leadership_hub_settings").select("*").eq("id", 1).single(),
+    sb.from("leadership_chart_members").select("*").order("sort_order").order("display_name"),
+    sb.from("leadership_chart_roles").select("*").order("sort_order").order("name"),
+    sb.from("leadership_member_roles").select("*"),
+    sb.from("leadership_chat_reports").select("*").eq("status", "pending").order("created_at"),
+    sb.from("leadership_prizes").select("*").order("created_at"),
+    sb.from("leadership_prize_claims").select("*").eq("status", "pending").order("created_at"),
+  ]);
+  const failure = [settingsResult, membersResult, rolesResult, assignmentResult, reportsResult, prizesResult, claimsResult].find(result => result.error);
+  if (failure) {
+    app.innerHTML = tabs() + `<p class="auth-error">Student Leadership settings could not load: ${esc(failure.error.message)}. Run update-10-student-leadership-hub.sql in Supabase SQL Editor.</p>`;
+    wire();
+    return;
+  }
+  const settings = settingsResult.data, members = membersResult.data, roles = rolesResult.data;
+  const roleIdsByMember = new Map();
+  assignmentResult.data.forEach(row => {
+    if (!roleIdsByMember.has(row.member_email)) roleIdsByMember.set(row.member_email, []);
+    roleIdsByMember.get(row.member_email).push(row.role_id);
+  });
+  app.innerHTML = tabs() + `<h2>Student Leadership management</h2>
+    <form id="lh-settings" class="admin-schedule">
+      <h3>Weekly spotlight and chat points</h3>
+      <label>Change the featured member on (UTC)
+        <select name="rotation_weekday">${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((day, index) => `<option value="${index}" ${settings.rotation_weekday === index ? "selected" : ""}>${day}</option>`).join("")}</select>
+      </label>
+      <label>Points for each approved chat report<input name="approval_points" type="number" min="0" max="10000" value="${settings.approval_points}" required></label>
+      <div><button class="auth-btn" type="submit">Save settings</button></div><small id="lh-settings-message"></small>
+    </form>
+    <section class="leadership-admin-section"><h3>Chart roles</h3>
+      <form id="lh-add-role"><label>New role<input name="name" maxlength="80" required></label><button class="auth-btn" type="submit">Add role</button><small id="lh-role-message"></small></form>
+      <div id="lh-role-list">${roles.map(role => `<div class="leadership-list-row"><span>${esc(role.name)}</span><button class="auth-btn alt" type="button" data-delete-role="${role.id}">Remove role</button></div>`).join("") || "<p>No roles yet. Add roles, then assign them to members below.</p>"}</div>
+    </section>
+    <section class="leadership-admin-section"><h3>Spotlight members</h3>
+      <p>Removing someone from the rotation does not remove them from Student Leadership.</p>
+      <div id="lh-member-list">${members.map(member => `<article class="leadership-member-admin" data-member="${esc(member.email)}">
+        <label>Display name<input data-display-name maxlength="120" value="${esc(member.display_name)}"></label>
+        <label>Rotation order<input data-sort-order type="number" step="1" value="${member.sort_order}"></label>
+        <label class="chk"><input data-in-cycle type="checkbox" ${member.in_cycle ? "checked" : ""}> Include in weekly rotation</label>
+        <fieldset><legend>Assigned roles</legend>${roles.map(role => `<label class="chk"><input data-member-role type="checkbox" value="${role.id}" ${(roleIdsByMember.get(member.email) || []).includes(role.id) ? "checked" : ""}> ${esc(role.name)}</label>`).join("") || "<small>Add a role above to assign one.</small>"}</fieldset>
+        <button class="auth-btn" type="button" data-save-member>Save member</button><small data-member-message></small>
+      </article>`).join("") || "<p>No Student Leadership members have been added yet.</p>"}</div>
+    </section>
+    <section class="leadership-admin-section"><h3>Chat reports awaiting approval</h3><div id="lh-report-queue"></div></section>
+    <section class="leadership-admin-section"><h3>Prize catalog</h3>
+      <form id="lh-add-prize"><label>Prize name<input name="name" maxlength="120" required></label><label>Description<textarea name="description" rows="2"></textarea></label><label>Points required<input name="points_cost" type="number" min="1" max="100000" required></label><button class="auth-btn" type="submit">Add prize</button><small id="lh-prize-message"></small></form>
+      <div id="lh-prize-list"></div>
+    </section>
+    <section class="leadership-admin-section"><h3>Prize requests awaiting approval</h3><div id="lh-claim-queue"></div></section>`;
+  wire();
+
+  const settingsForm = document.getElementById("lh-settings"), settingsMessage = document.getElementById("lh-settings-message");
+  settingsForm.onsubmit = async event => {
+    event.preventDefault();
+    const form = event.target.elements;
+    const { error } = await sb.from("leadership_hub_settings").update({
+      rotation_weekday: Number(form.rotation_weekday.value),
+      approval_points: Number(form.approval_points.value),
+    }).eq("id", 1);
+    settingsMessage.textContent = error ? `Could not save settings: ${error.message}` : "Settings saved.";
+  };
+  const roleForm = document.getElementById("lh-add-role"), roleMessage = document.getElementById("lh-role-message");
+  roleForm.onsubmit = async event => {
+    event.preventDefault();
+    const name = event.target.elements.name.value.trim();
+    const { error } = await sb.from("leadership_chart_roles").insert({ name, sort_order: roles.length });
+    if (error) { roleMessage.textContent = `Could not add role: ${error.message}`; return; }
+    await studentLeadershipUI();
+  };
+  document.querySelectorAll("[data-delete-role]").forEach(button => button.onclick = async () => {
+    const role = roles.find(item => item.id === button.dataset.deleteRole);
+    if (!role || !confirm(`Remove the "${role.name}" role from the chart?`)) return;
+    const { error } = await sb.from("leadership_chart_roles").delete().eq("id", role.id);
+    if (error) { alert(`Could not remove role: ${error.message}`); return; }
+    await studentLeadershipUI();
+  });
+  document.querySelectorAll("[data-save-member]").forEach(button => button.onclick = async () => {
+    const card = button.closest("[data-member]"), email = card.dataset.member, message = card.querySelector("[data-member-message]");
+    button.disabled = true;
+    const { error: memberError } = await sb.from("leadership_chart_members").update({
+      display_name: card.querySelector("[data-display-name]").value.trim(),
+      sort_order: Number(card.querySelector("[data-sort-order]").value),
+      in_cycle: card.querySelector("[data-in-cycle]").checked,
+    }).eq("email", email);
+    if (memberError) { message.textContent = `Could not save member: ${memberError.message}`; button.disabled = false; return; }
+    const roleIds = [...card.querySelectorAll("[data-member-role]:checked")].map(input => input.value);
+    const { error: rolesError } = await sb.rpc("set_leadership_member_roles", { p_email: email, p_role_ids: roleIds });
+    message.textContent = rolesError ? `Member saved, but roles could not be updated: ${rolesError.message}` : "Saved.";
+    button.disabled = false;
+  });
+  document.getElementById("lh-add-prize").onsubmit = async event => {
+    event.preventDefault();
+    const form = event.target.elements, message = document.getElementById("lh-prize-message");
+    const { error } = await sb.from("leadership_prizes").insert({
+      name: form.name.value.trim(),
+      description: form.description.value.trim(),
+      points_cost: Number(form.points_cost.value),
+    });
+    if (error) { message.textContent = `Could not add prize: ${error.message}`; return; }
+    await studentLeadershipUI();
+  };
+  const prizeHost = document.getElementById("lh-prize-list");
+  prizeHost.innerHTML = prizesResult.data.map(prize => `<div class="leadership-list-row"><span>${esc(prize.name)} · ${prize.points_cost} points${prize.active ? "" : " · unavailable"}</span><button class="auth-btn alt" type="button" data-toggle-prize="${prize.id}">${prize.active ? "Hide prize" : "Restore prize"}</button></div>`).join("")
+    || "<p>No prizes have been added.</p>";
+  prizeHost.querySelectorAll("[data-toggle-prize]").forEach(button => button.onclick = async () => {
+    const prize = prizesResult.data.find(item => item.id === button.dataset.togglePrize);
+    const { error } = await sb.from("leadership_prizes").update({ active: !prize.active }).eq("id", prize.id);
+    if (error) { alert(`Could not update prize: ${error.message}`); return; }
+    await studentLeadershipUI();
+  });
+  await paintChatReportQueue(reportsResult.data);
+  await paintPrizeClaimQueue(claimsResult.data);
+}
+
+async function paintChatReportQueue(reports) {
+  const host = document.getElementById("lh-report-queue");
+  if (!reports.length) { host.textContent = "No reports are waiting for review."; return; }
+  const urls = await sb.storage.from("leadership-reports").createSignedUrls(reports.map(report => report.screenshot_path), 900);
+  if (urls.error) { host.innerHTML = `<p class="auth-error">Could not load private screenshots: ${esc(urls.error.message)}</p>`; return; }
+  const urlByPath = new Map((urls.data || []).map(file => [file.path, file.signedUrl]));
+  host.innerHTML = reports.map(report => `<article class="leadership-review-card">
+    <div><b>${esc(report.reporter_email)}</b> chatted with <b>${esc(report.chatted_with)}</b><br><small>${esc(new Date(report.created_at).toLocaleString())}</small></div>
+    ${urlByPath.has(report.screenshot_path) ? `<a href="${esc(urlByPath.get(report.screenshot_path))}" target="_blank" rel="noopener noreferrer"><img src="${esc(urlByPath.get(report.screenshot_path))}" alt="Private chat report screenshot"></a>` : "<p>Screenshot link unavailable.</p>"}
+    <div><button class="auth-btn" type="button" data-review-report="${report.id}" data-decision="approved">Approve and award points</button>
+      <button class="auth-btn alt" type="button" data-review-report="${report.id}" data-decision="rejected">Reject</button></div></article>`).join("");
+  host.querySelectorAll("[data-review-report]").forEach(button => button.onclick = async () => {
+    button.disabled = true;
+    const { error } = await sb.rpc("review_leadership_chat_report", { p_report_id: button.dataset.reviewReport, p_decision: button.dataset.decision });
+    if (error) { alert(`Could not review report: ${error.message}`); button.disabled = false; return; }
+    await studentLeadershipUI();
+  });
+}
+
+async function paintPrizeClaimQueue(claims) {
+  const host = document.getElementById("lh-claim-queue");
+  if (!claims.length) { host.textContent = "No prize requests are waiting for approval."; return; }
+  host.innerHTML = claims.map(claim => `<div class="leadership-list-row"><span>${esc(claim.user_email)} requested ${esc(claim.prize_name)} · ${claim.points_cost} points</span>
+    <span><button class="auth-btn" type="button" data-review-claim="${claim.id}" data-decision="approved">Approve</button>
+    <button class="auth-btn alt" type="button" data-review-claim="${claim.id}" data-decision="rejected">Reject</button></span></div>`).join("");
+  host.querySelectorAll("[data-review-claim]").forEach(button => button.onclick = async () => {
+    button.disabled = true;
+    const { error } = await sb.rpc("review_leadership_prize_claim", { p_claim_id: button.dataset.reviewClaim, p_decision: button.dataset.decision });
+    if (error) { alert(`Could not review prize request: ${error.message}`); button.disabled = false; return; }
+    await studentLeadershipUI();
+  });
+}
 
 async function alertsUI() {
   const { data: c, error } = await sb.from("notify_config").select("*").eq("id", 1).maybeSingle();
   app.innerHTML = tabs() + `<form id="al" class="admin-schedule"><h3>Email alerts for new photos</h3>
-    <p><small>When students or visitors submit photos, everyone on the Leadership team and all Admins get one email (at most every 5 minutes) saying how many are waiting. Setup steps are at the top of <b>email-alerts.gs</b>.</small></p>
+    <p><small>When students or visitors submit photos, everyone in Student Leadership and all Admins get one email (at most every 5 minutes) saying how many are waiting. Setup steps are at the top of <b>email-alerts.gs</b>.</small></p>
     ${error ? `<p class="auth-error">${esc(error.message)}, run update-5b-email-alerts.sql first.</p>` : ""}
     <label class="chk"><input type="checkbox" name="enabled" ${c?.enabled ? "checked" : ""}> Send email alerts</label>
     <label>Google Apps Script web app URL<input name="url" value="${esc(c?.webhook_url || "")}" placeholder="https://script.google.com/macros/s/…/exec"></label>
@@ -487,7 +636,7 @@ async function studentsUI() {
     const rows = students.filter(s => !q || (s.email + " " + (s.full_name || "")).toLowerCase().includes(q));
     count.textContent = q ? `${rows.length} of ${students.length} people` : `${students.length} people`;
     list.innerHTML = rows.map(s => `<div class="row"><span>${s.full_name ? "<b>" + esc(s.full_name) + "</b> · " : ""}${esc(s.email)}
-      ${s.admin_role ? ' <span class="via-badge">Admin</span>' : ""}${s.leader_role ? ' <span class="via-badge">Leadership</span>' : ""}${s.must_change_password ? ' <span class="sched-badge">Hasn\'t chosen a password yet</span>' : ""}</span>
+      ${s.admin_role ? ' <span class="via-badge">Admin</span>' : ""}${s.leader_role ? ' <span class="via-badge">Student Leadership</span>' : ""}${s.must_change_password ? ' <span class="sched-badge">Hasn\'t chosen a password yet</span>' : ""}</span>
       <small>${s.last_sign_in_at ? "Last sign-in " + esc(new Date(s.last_sign_in_at).toLocaleDateString()) : "Never signed in"}</small></div>`).join("") || "<p><small>No matches.</small></p>";
   };
   document.getElementById("st-q").oninput = paint; paint();

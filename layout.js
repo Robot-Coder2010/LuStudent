@@ -62,9 +62,16 @@
   }
   else {
     const u = session.user, name = u.app_metadata?.full_name || u.email, adm = await (async () => { const r = await sb.rpc("my_role"); return r.data || ((await sb.rpc("is_admin")).data ? "admin" : "student"); })();
+    if (adm === "admin" || adm === "leader") {
+      const link = document.createElement("a");
+      link.href = "leadership.html";
+      link.textContent = "Student Leadership";
+      if (page === "leadership.html") link.setAttribute("aria-current", "page");
+      $("nav").appendChild(link);
+    }
     const previewOption = window.LU_LOCAL_HOST ? '<button id="preview-toggle" type="button">Use local preview</button>' : "";
     $("pf").innerHTML = `<button class="icon-btn avatar" id="pb" aria-label="Profile menu" aria-haspopup="true">${name[0].toUpperCase()}</button>
-      <div class="menu" id="pm"><div class="who"><b>${name.replace(/[<>&]/g, "")}</b><br>${u.email}</div><a href="change-password.html">Change password</a><a href="photos.html">My photos</a>${adm !== "student" ? '<a href="admin.html">' + (adm === "admin" ? "Admin" : "Leadership tools") + '</a>' : ""}<a href="https://mail.google.com/mail/?view=cm&amp;fs=1&amp;to=studentleadership%40latterup.org" target="_blank" rel="noopener noreferrer">Contact Student Leadership</a>${previewOption}<button id="th" class="theme-menu-toggle" type="button"></button><button id="so">Sign out</button></div>`;
+      <div class="menu" id="pm"><div class="who"><b>${name.replace(/[<>&]/g, "")}</b><br>${u.email}</div><a href="change-password.html">Change password</a><a href="photos.html">My photos</a>${adm !== "student" ? '<a href="admin.html">' + (adm === "admin" ? "Admin" : "Student Leadership tools") + '</a>' : ""}<a href="https://mail.google.com/mail/?view=cm&amp;fs=1&amp;to=studentleadership%40latterup.org" target="_blank" rel="noopener noreferrer">Contact Student Leadership</a>${previewOption}<button id="th" class="theme-menu-toggle" type="button"></button><button id="so">Sign out</button></div>`;
     paint(); wireProfileMenu();
     $("so").onclick = async () => { await sb.auth.signOut(); location.href = "index.html"; };
   }
