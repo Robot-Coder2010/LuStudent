@@ -723,6 +723,10 @@ section { padding: 64px 0; }
 .adm nav [draggable="true"]:active{cursor:grabbing}
 .adm nav .dragging{opacity:.45}
 .adm .row{display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:.7rem 0;border-bottom:1px solid var(--stone)}
+.adm .student-admin-row{justify-content:flex-start;flex-wrap:wrap}
+.student-admin-row>span:first-child{flex:1;min-width:240px}
+.student-leader-toggle{flex:none;white-space:nowrap}
+.student-last-signin{display:flex;flex-direction:column;align-items:flex-end;gap:.35rem;margin-left:auto}
 .adm form{display:grid;gap:.8rem;margin:1.5rem 0;padding:1.2rem;border:1px solid var(--stone);border-radius:10px;background:var(--surface)}
 .adm label{display:grid;gap:.25rem;font-weight:600;font-size:.9rem}
 .adm input,.adm textarea{font:inherit;padding:.55rem;border:1px solid var(--stone);border-radius:6px}

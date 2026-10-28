@@ -49,7 +49,12 @@
     return;
   }
   const { data: { session } } = await sb.auth.getSession();
-  if (String(session?.user?.app_metadata?.must_change_password).toLowerCase() === "true"
+  const user = session?.user;
+  const hasGoogleIdentity = user?.app_metadata?.provider === "google"
+    || (Array.isArray(user?.app_metadata?.providers) && user.app_metadata.providers.includes("google"))
+    || user?.identities?.some(identity => identity.provider === "google");
+  if (!hasGoogleIdentity
+      && String(user?.app_metadata?.must_change_password).toLowerCase() === "true"
       && !["change-password.html", "login.html"].includes(page.toLowerCase())) {
     location.replace("change-password.html?next=" + encodeURIComponent(page));
     return;

@@ -7,9 +7,12 @@ const T = {
   themes: { label: "Photo Challenge", order: "starts_at", title: "title", f: [["title", "Theme"], ["description", "Description", "textarea"], ["starts_at", "Starts", "datetime"], ["ends_at", "Ends (next theme starts then)", "datetime"], ["video_path", "Finished video (optional)", "file", "video/mp4,video/webm"]] },
 };
 const LEADERSHIP_CHART_ROLES = ["Opening Prayer", "Spiritual Thought", "Do you know them?", "Closing Prayer"];
-const DEFAULT_ADMIN_TAB_ORDER = ["announcements", "videos", "themes", "_h", "home", "_i", "_s", "_a", "_l", "_n"];
+const DEFAULT_ADMIN_TAB_ORDER = ["announcements", "videos", "themes", "_h", "home", "_i", "_s", "_a", "_n"];
 let cur = "announcements", ROLE = "student";
 let ADMIN_TAB_ORDER = DEFAULT_ADMIN_TAB_ORDER.slice(), ADMIN_TAB_ORDER_ERROR = "";
+const hasGoogleIdentity = user => user?.app_metadata?.provider === "google"
+  || (Array.isArray(user?.app_metadata?.providers) && user.app_metadata.providers.includes("google"))
+  || user?.identities?.some(identity => identity.provider === "google");
 const loc = v => { const d = new Date(v); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16); };
 const isValidTimeZone = value => {
   try { new Intl.DateTimeFormat("en-US", { timeZone: value }).format(); return true; }
@@ -33,7 +36,8 @@ const driveId = value => {
 
 async function boot() {
   const { data: { session } } = await sb.auth.getSession();
-  if (String(session?.user?.app_metadata?.must_change_password).toLowerCase() === "true") {
+  if (!hasGoogleIdentity(session?.user)
+      && String(session?.user?.app_metadata?.must_change_password).toLowerCase() === "true") {
     location.replace("change-password.html?next=" + encodeURIComponent("admin.html"));
     return;
   }
@@ -60,8 +64,7 @@ function tabs() {
   if (ROLE === "admin") entries.push(
     { id: "_h", label: "Student Leadership" }, { id: "home", label: "Home Page" },
     { id: "_i", label: "Import students" }, { id: "_s", label: "Students" },
-    { id: "_a", label: "Admins" }, { id: "_l", label: "Manage members" },
-    { id: "_n", label: "Email alerts" }
+    { id: "_a", label: "Admins" }, { id: "_n", label: "Email alerts" }
   );
   const entryMap = new Map(entries.map(entry => [entry.id, entry]));
   const preferredOrder = ROLE === "admin" ? ADMIN_TAB_ORDER : entries.map(entry => entry.id);
@@ -115,7 +118,6 @@ async function show(editRow) {
   if (cur === "_i") return importUI();
   if (cur === "_h") return studentLeadershipUI();
   if (cur === "_a") return peopleUI("admins", "Admins", "Admins can do everything on the site. The person needs a student account first (Import students).", "Give admin access to", "Make admin");
-  if (cur === "_l") return peopleUI("leadership", "Student Leadership", "Student Leadership can add announcements, videos and photo themes and approve or reject photos, but can't edit or delete anything, and can't change settings. They get the new-photo emails. They need a student account first (Import students).", "Add a Student Leadership member", "Add to Student Leadership");
   if (cur === "_n") return alertsUI();
   return listUI(cur, app);
 }
@@ -705,7 +707,7 @@ async function homeTabUI() {
 async function studentsUI(notice = "") {
   const { data, error } = await sb.rpc("list_students");
   const students = data ?? [];
-  const removableCount = students.filter(student => !student.admin_role && !student.leader_role).length;
+  let removableCount = students.filter(student => !student.admin_role && !student.leader_role).length;
   app.innerHTML = tabs() + `<h3>Students</h3><p><small>Everyone who has a login for the portal. To add more people, use the Import students tab. Removing a student permanently deletes their account; they can create it again by signing in with Google.</small></p>${error ? `<p class="auth-error">${esc(error.message)}, run update-6-students-list.sql first.</p>` : ""}
     ${notice ? `<p class="role-note" role="status">${esc(notice)}</p>` : ""}
     <p><button class="auth-btn alt" type="button" id="st-remove-all" ${error || removableCount === 0 ? "disabled" : ""}>Remove all students (${removableCount})</button></p>
@@ -716,21 +718,47 @@ async function studentsUI(notice = "") {
     const q = document.getElementById("st-q").value.trim().toLowerCase();
     const rows = students.filter(s => !q || (s.email + " " + (s.full_name || "")).toLowerCase().includes(q));
     count.textContent = q ? `${rows.length} of ${students.length} people` : `${students.length} people`;
-    list.innerHTML = rows.map(s => `<div class="row"><span>${s.full_name ? "<b>" + esc(s.full_name) + "</b> · " : ""}${esc(s.email)}
-      ${s.admin_role ? ' <span class="via-badge">Admin</span>' : ""}${s.leader_role ? ' <span class="via-badge">Student Leadership</span>' : ""}${s.must_change_password ? ' <span class="sched-badge">Hasn\'t chosen a password yet</span>' : ""}</span>
-      <span><small>${s.last_sign_in_at ? "Last sign-in " + esc(new Date(s.last_sign_in_at).toLocaleDateString()) : "Never signed in"}</small>
-      ${!s.admin_role && !s.leader_role ? `<button class="auth-btn alt" type="button" data-remove-student="${esc(s.email)}">Remove student</button>` : ""}</span></div>`).join("") || "<p><small>No matches.</small></p>";
+    list.innerHTML = rows.map(s => {
+      const email = s.email || "";
+      const canBeLeader = email.toLowerCase().endsWith("@latterup.org");
+      return `<div class="row student-admin-row"><span>${s.full_name ? "<b>" + esc(s.full_name) + "</b> · " : ""}${esc(email)}
+        ${s.admin_role ? ' <span class="via-badge">Admin</span>' : ""}${s.must_change_password ? ' <span class="sched-badge">Hasn\'t chosen a password yet</span>' : ""}</span>
+        <label class="chk student-leader-toggle" title="${canBeLeader ? "Add or remove Student Leadership access" : "Student Leadership requires an @latterup.org account"}">
+          <input type="checkbox" data-leader-toggle="${esc(email)}" ${s.leader_role ? "checked" : ""} ${error || !canBeLeader ? "disabled" : ""}> Student Leadership
+        </label>
+        <span class="student-last-signin"><small>${s.last_sign_in_at ? "Last sign-in " + esc(new Date(s.last_sign_in_at).toLocaleDateString()) : "Never signed in"}</small>
+        ${!s.admin_role && !s.leader_role ? `<button class="auth-btn alt" type="button" data-remove-student="${esc(email)}">Remove student</button>` : ""}</span></div>`;
+    }).join("") || "<p><small>No matches.</small></p>";
+    list.querySelectorAll("[data-leader-toggle]").forEach(input => input.onchange = async () => {
+      const email = input.dataset.leaderToggle;
+      const isAdding = input.checked;
+      input.disabled = true;
+      const result = isAdding
+        ? await sb.from("leadership").insert({ email: email.toLowerCase() })
+        : await sb.from("leadership").delete().eq("email", email.toLowerCase());
+      if (result.error) {
+        input.checked = !isAdding;
+        input.disabled = false;
+        alert(`Could not ${isAdding ? "add" : "remove"} ${email} ${isAdding ? "to" : "from"} Student Leadership: ${result.error.message}`);
+        return;
+      }
+      await studentsUI(`${email} ${isAdding ? "added to" : "removed from"} Student Leadership.`);
+    });
+    list.querySelectorAll("[data-remove-student]").forEach(button => button.onclick = async () => {
+      const email = button.dataset.removeStudent;
+      if (!confirm(`Permanently delete ${email}'s account? They can sign in with Google again to create a new account.`)) return;
+      button.disabled = true;
+      const { data: deleted, error: deleteError } = await sb.rpc("remove_student_account", { p_email: email });
+      if (deleteError) { alert(`Could not remove ${email}: ${deleteError.message}`); button.disabled = false; return; }
+      await studentsUI(`Removed ${deleted?.[0]?.email || email}.`);
+    });
+    removableCount = students.filter(student => !student.admin_role && !student.leader_role).length;
+    const removeAllButton = document.getElementById("st-remove-all");
+    removeAllButton.textContent = `Remove all students (${removableCount})`;
+    removeAllButton.disabled = !!error || removableCount === 0;
   };
   document.getElementById("st-q").oninput = paint;
   paint();
-  list.querySelectorAll("[data-remove-student]").forEach(button => button.onclick = async () => {
-    const email = button.dataset.removeStudent;
-    if (!confirm(`Permanently delete ${email}'s account? They can sign in with Google again to create a new account.`)) return;
-    button.disabled = true;
-    const { data: deleted, error: deleteError } = await sb.rpc("remove_student_account", { p_email: email });
-    if (deleteError) { alert(`Could not remove ${email}: ${deleteError.message}`); button.disabled = false; return; }
-    await studentsUI(`Removed ${deleted?.[0]?.email || email}.`);
-  });
   document.getElementById("st-remove-all").onclick = async buttonEvent => {
     if (!confirm(`Permanently delete all ${removableCount} student accounts? Admin and Student Leadership accounts are protected.`)) return;
     if (prompt('To confirm permanent deletion of all students, type "DELETE ALL".') !== "DELETE ALL") return;
