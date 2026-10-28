@@ -759,7 +759,7 @@ main.adm[style*="max-width:460px"] .auth-btn { border-radius: 10px; }
 }
 .home-page #videos-preview-list .video-frame-wrap {
   aspect-ratio: auto;
-  height: calc((100cqw - var(--home-video-gap)) * 0.28125 + 40px);
+  height: calc((100cqw - var(--home-video-gap)) * 0.28125 + 75px);
 }
 .home-page #announcements-preview-list .announcement-item {
   background: var(--surface) !important;
