@@ -34,16 +34,19 @@
 
   function renderChart(host, members, weekday) {
     const assignments = currentAssignments(members, chartRoleNames, rotationWeekIndex(weekday));
-    host.innerHTML = `<section class="leadership-card">
-      <p class="eyebrow">Student Leadership · Weekly assignments</p>
-      <h2>This week's chart</h2>
-      <p>Assignments change every ${weekdayNames[weekday]} (UTC).</p>
-      <div class="leadership-chart" role="table" aria-label="Weekly Student Leadership roles">
-        ${assignments.map(({ role, member }) => `<div class="leadership-chart-row" role="row">
-          <strong role="cell">${esc(role)}</strong>
-          <span role="cell">${member ? esc(member.display_name) : "No member assigned"}</span>
-        </div>`).join("")}
+    host.innerHTML = `<section class="leadership-section leadership-chart-section" aria-labelledby="weekly-chart-title">
+      <div class="leadership-section-heading">
+        <div><p class="eyebrow">This week's assignments</p><h2 id="weekly-chart-title">Weekly role chart</h2></div>
+        <span class="leadership-rotation-badge">${LUIcon("clock", 17)} Rotates ${weekdayNames[weekday]}</span>
       </div>
+      <div class="leadership-chart" aria-label="Weekly Student Leadership roles">
+        ${assignments.map(({ role, member }, index) => `<article class="leadership-role-card">
+          <span class="leadership-role-number">0${index + 1}</span>
+          <div class="leadership-role-copy"><h3>${esc(role)}</h3>
+            <p>${member ? esc(member.display_name) : "No eligible member assigned yet"}</p></div>
+        </article>`).join("")}
+      </div>
+      <p class="leadership-chart-note">The chart updates automatically every ${weekdayNames[weekday]} (UTC).</p>
     </section>`;
   }
 
@@ -61,20 +64,22 @@
       return;
     }
 
-    const [settingsResult, membersResult, rolesResult, assignmentsResult] = await Promise.all([
-      sb.from("leadership_hub_settings").select("rotation_weekday,approval_points,visibility").eq("id", 1).single(),
-      sb.from("leadership_chart_members").select("email,display_name,in_cycle,sort_order").order("sort_order").order("display_name"),
-      sb.from("leadership_chart_roles").select("id,name,sort_order").in("name", chartRoleNames).order("sort_order").order("name"),
-      sb.from("leadership_member_roles").select("member_email,role_id"),
-    ]);
-    const failed = [settingsResult, membersResult, rolesResult, assignmentsResult].find(result => result.error);
-    if (failed) return showError(app, `The Student Leadership hub could not load: ${failed.error.message}. Ask an admin to run update-10-student-leadership-hub.sql.`);
+    const settingsResult = await sb.from("leadership_hub_settings").select("rotation_weekday,approval_points,visibility").eq("id", 1).single();
+    if (settingsResult.error) return showError(app, `The Student Leadership hub could not load: ${settingsResult.error.message}. Ask an admin to run update-10-student-leadership-hub.sql.`);
     const mayViewHub = settingsResult.data.visibility === "leaders_admins"
       || (settingsResult.data.visibility === "admins" && role === "admin");
     if (!mayViewHub) {
       location.replace("index.html");
       return;
     }
+
+    const [membersResult, rolesResult, assignmentsResult] = await Promise.all([
+      sb.from("leadership_chart_members").select("email,display_name,in_cycle,sort_order").order("sort_order").order("display_name"),
+      sb.from("leadership_chart_roles").select("id,name,sort_order").in("name", chartRoleNames).order("sort_order").order("name"),
+      sb.from("leadership_member_roles").select("member_email,role_id"),
+    ]);
+    const failed = [membersResult, rolesResult, assignmentsResult].find(result => result.error);
+    if (failed) return showError(app, `The Student Leadership hub could not load: ${failed.error.message}. Ask an admin to run update-10-student-leadership-hub.sql.`);
     const roleNames = new Map(rolesResult.data.map(item => [item.id, item.name]));
     const assignments = new Map();
     assignmentsResult.data.forEach(item => {
@@ -84,19 +89,27 @@
     });
     const members = membersResult.data.map(member => ({ ...member, roles: assignments.get(member.email) || [] }));
 
-    app.innerHTML = `<section class="page-hero photo-style-hero leadership-hero"><p class="eyebrow">Latter UP · Student community</p>
-      <h1 class="page-title">Student Leadership</h1><p>Meet the people serving our community and report your Google Chat conversations.</p></section>
+    app.innerHTML = `<header class="leadership-hero">
+        <div class="leadership-hero-copy"><p class="eyebrow">${LUIcon("up", 17)} Latter UP · Student community</p>
+          <h1>Student Leadership</h1><p>A place to serve, connect, and celebrate the ways we show up for one another.</p></div>
+        <div class="leadership-hero-mark" aria-hidden="true"><span>LU</span><i></i><i></i><i></i></div>
+      </header>
       <section id="weekly-role-chart"></section>
-      <section class="leadership-section" id="report-section"><h2>Report My Chats</h2>
+      <section class="leadership-section leadership-report-section" id="report-section">
+        <div class="leadership-section-heading"><div><p class="eyebrow">Share a moment of connection</p><h2>Report My Chats</h2></div>
+          <span class="leadership-section-icon">${LUIcon("camera", 23)}</span></div>
         <p>Upload one screenshot of a Google Chat conversation and tell us who you chatted with. Reports are reviewed by an admin. Approved reports earn ${settingsResult.data.approval_points} points.</p>
         <form id="chat-report-form" class="leadership-form">
-          <label>Person you chatted with<input name="chatted_with" maxlength="120" required></label>
-          <label>Chat screenshot<input name="screenshot" type="file" accept="image/png,image/jpeg,image/webp" required><small>PNG, JPG, or WebP; maximum 10 MB. Screenshots are only visible to you and admins.</small></label>
-          <button class="auth-btn" type="submit">Submit chat report</button><p id="chat-report-message" role="status"></p>
+          <label>Who did you chat with?<input name="chatted_with" maxlength="120" placeholder="Enter their name" required></label>
+          <label class="leadership-file-field">Add a screenshot<input name="screenshot" type="file" accept="image/png,image/jpeg,image/webp" required><small>PNG, JPG, or WebP · Up to 10 MB. Only you and admins can view your screenshot.</small></label>
+          <div class="leadership-form-footer"><button class="auth-btn" type="submit">Submit chat report</button><p id="chat-report-message" role="status"></p></div>
         </form></section>
-      <section class="leadership-section" id="points-section"><h2>Points and prizes</h2><div id="points-summary">Loading your points…</div>
+      <section class="leadership-section leadership-rewards-section" id="points-section">
+        <div class="leadership-section-heading"><div><p class="eyebrow">A little thank-you</p><h2>Points and prizes</h2></div>
+          <span class="leadership-section-icon leadership-rewards-icon">★</span></div>
+        <div id="points-summary">Loading your points…</div>
         <div id="leadership-prizes" class="leadership-prize-grid"></div>
-        <h3>My prize claims</h3><div id="my-prize-claims"></div></section>`;
+        <div class="leadership-claims"><h3>My prize requests</h3><div id="my-prize-claims"></div></div></section>`;
     renderChart(document.getElementById("weekly-role-chart"), members, settingsResult.data.rotation_weekday);
     await wireReports(session.user);
     await loadRewards(session.user.id);
@@ -158,7 +171,7 @@
     }
     const earned = reports.data.reduce((total, report) => total + report.points_awarded, 0);
     const reserved = claims.data.filter(claim => ["pending", "approved"].includes(claim.status)).reduce((total, claim) => total + claim.points_cost, 0);
-    summary.innerHTML = `<p><strong>${earned - reserved}</strong> available points · ${earned} earned</p>`;
+    summary.innerHTML = `<div class="leadership-points-balance"><span>Available to spend<br><small>${earned} points earned</small></span><strong>${earned - reserved} points</strong></div>`;
     prizeHost.innerHTML = prizes.data.map(prize => `<article class="leadership-prize-card">
       <h3>${esc(prize.name)}</h3><p>${esc(prize.description)}</p><p><strong>${prize.points_cost} points</strong></p>
       <button class="auth-btn" type="button" data-claim="${prize.id}" ${earned - reserved < prize.points_cost ? "disabled" : ""}>Request prize</button></article>`).join("")

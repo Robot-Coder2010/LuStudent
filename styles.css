@@ -953,23 +953,61 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 .photo-upload-button { color: var(--cream) !important; }
 .adm nav .on { color: #17264F; }
 
-.leadership-hub { max-width: 860px; }
-.leadership-hero { padding: 1.5rem 0; }
-.leadership-card,.leadership-section,.leadership-admin-section,.leadership-member-admin,.leadership-review-card,.leadership-prize-card {
-  margin: 1rem 0; padding: 1.25rem; border: 1px solid var(--stone-line); border-radius: 14px; background: var(--surface);
+.leadership-hub { max-width:1040px; padding-top:clamp(1.25rem,4vw,3rem); padding-bottom:4rem; }
+.leadership-hero {
+  position:relative; isolation:isolate; display:flex; align-items:center; justify-content:space-between; gap:2rem;
+  min-height:250px; overflow:hidden; padding:clamp(1.5rem,5vw,3.5rem);
+  border:1px solid rgba(255,255,255,.1); border-radius:24px;
+  background:linear-gradient(118deg,#17264F 0%,#263B70 72%,#344b80 100%); color:#F6F8FF;
+  box-shadow:0 18px 42px rgba(23,38,79,.16);
 }
-.leadership-card { text-align: center; }
-.leadership-card h2 { margin: .35rem 0; }
-.leadership-role-list { display:flex; flex-wrap:wrap; justify-content:center; gap:.4rem; margin:1rem 0; }
-.leadership-chart { max-width:620px; margin:1rem auto 0; border-top:1px solid var(--stone-line); }
-.leadership-chart-row { display:grid; grid-template-columns:1fr 1fr; gap:1rem; padding:.9rem .25rem; text-align:left; border-bottom:1px solid var(--stone-line); }
-.leadership-chart-row strong { color:var(--slate); }
-.leadership-section h2,.leadership-admin-section h3 { margin-top:0; }
-.leadership-form { display:grid; gap:.8rem; }
-.leadership-form label,.leadership-member-admin>label { display:grid; gap:.3rem; font-weight:600; }
-.leadership-prize-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:1rem; }
-.leadership-prize-card { margin:0; }
-.leadership-prize-card h3 { margin-top:0; }
+.leadership-hero::before,.leadership-hero::after { position:absolute; z-index:-1; content:""; border-radius:50%; pointer-events:none; }
+.leadership-hero::before { width:310px; height:310px; right:90px; top:-205px; border:1px solid rgba(255,200,61,.38); box-shadow:0 0 0 28px rgba(255,200,61,.06),0 0 0 58px rgba(255,255,255,.04); }
+.leadership-hero::after { width:240px; height:240px; right:-80px; bottom:-175px; background:rgba(255,200,61,.12); }
+.leadership-hero-copy { max-width:620px; }
+.leadership-hero .eyebrow { display:flex; align-items:center; gap:.5rem; margin:0 0 1rem; color:#FFD86F; font-size:.78rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+.leadership-hero h1 { margin:0; color:#fff; font-family:var(--font-body); font-size:clamp(2.4rem,6vw,4.2rem); font-weight:750; letter-spacing:-.055em; line-height:1.04; }
+.leadership-hero-copy>p:last-child { max-width:48ch; margin:1rem 0 0; color:rgba(246,248,255,.82); font-size:1.05rem; line-height:1.65; }
+.leadership-hero-mark { position:relative; flex:none; display:grid; width:126px; height:126px; place-items:center; border:1px solid rgba(255,255,255,.3); border-radius:36px; background:rgba(255,255,255,.08); color:#FFD86F; font:700 2.4rem var(--font-display); transform:rotate(6deg); }
+.leadership-hero-mark::before { position:absolute; inset:9px; border:1px solid rgba(255,200,61,.55); border-radius:28px; content:""; }
+.leadership-hero-mark i { position:absolute; width:8px; height:8px; border-radius:50%; background:#FFD86F; }
+.leadership-hero-mark i:nth-of-type(1) { top:-5px; left:26px; }
+.leadership-hero-mark i:nth-of-type(2) { right:-4px; top:42px; }
+.leadership-hero-mark i:nth-of-type(3) { bottom:7px; left:-5px; }
+.leadership-section,.leadership-admin-section,.leadership-member-admin,.leadership-review-card,.leadership-prize-card {
+  margin:1.25rem 0; padding:clamp(1.15rem,3vw,1.8rem); border:1px solid var(--stone-line);
+  border-radius:20px; background:var(--surface); box-shadow:0 10px 28px rgba(23,38,79,.045);
+}
+.leadership-section-heading { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1rem; }
+.leadership-section-heading .eyebrow { margin:0 0 .25rem; color:var(--stone); font-size:.75rem; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+.leadership-section-heading h2 { margin:0; color:var(--navy); font-family:var(--font-body); font-size:clamp(1.45rem,3vw,1.9rem); letter-spacing:-.035em; }
+.leadership-rotation-badge { display:inline-flex; align-items:center; gap:.4rem; padding:.5rem .75rem; border-radius:980px; background:var(--tint); color:var(--slate); font-size:.84rem; font-weight:700; white-space:nowrap; }
+.leadership-chart { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.8rem; }
+.leadership-role-card { position:relative; display:flex; align-items:center; gap:1rem; min-height:104px; padding:1rem; overflow:hidden; border:1px solid var(--stone-line); border-radius:15px; background:linear-gradient(135deg,var(--surface),color-mix(in srgb,var(--tint) 48%,var(--surface))); }
+.leadership-role-number { display:grid; width:46px; height:46px; flex:none; place-items:center; border-radius:14px; background:var(--gold); color:#17264F; font-size:.9rem; font-weight:800; }
+.leadership-role-copy h3 { margin:0 0 .3rem; color:var(--stone); font-size:.77rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+.leadership-role-copy p { margin:0; color:var(--navy); font-size:1.12rem; font-weight:700; }
+.leadership-chart-note { margin:1rem 0 0; color:var(--stone); font-size:.83rem; text-align:right; }
+.leadership-section>p { color:var(--stone); line-height:1.6; }
+.leadership-section-icon { display:grid; width:46px; height:46px; flex:none; place-items:center; border-radius:15px; background:var(--tint); color:var(--slate); }
+.leadership-rewards-icon { background:color-mix(in srgb,#FFC83D 26%,var(--surface)); color:#B27700; font-size:1.45rem; }
+.leadership-form { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:1.25rem; }
+.leadership-form label,.leadership-member-admin>label { display:grid; align-content:start; gap:.45rem; color:var(--navy); font-size:.9rem; font-weight:700; }
+.leadership-form input:not([type=file]) { width:100%; min-height:48px; padding:.7rem .85rem; border:1px solid var(--stone-line); border-radius:11px; }
+.leadership-file-field input[type=file] { width:100%; min-height:48px; padding:.65rem; border:1px dashed var(--stone); border-radius:11px; color:var(--navy); }
+.leadership-file-field small { line-height:1.45; }
+.leadership-form-footer { grid-column:1/-1; display:flex; align-items:center; flex-wrap:wrap; gap:.75rem; }
+.leadership-form-footer p { margin:0; color:var(--stone); font-size:.9rem; }
+.leadership-points-balance { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin:1.25rem 0; padding:1rem 1.2rem; border-radius:15px; background:var(--tint); color:var(--navy); }
+.leadership-points-balance strong { color:var(--slate); font-size:1.65rem; }
+.leadership-prize-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:1rem; margin-top:1rem; }
+.leadership-prize-card { display:flex; flex-direction:column; align-items:flex-start; gap:.35rem; margin:0; }
+.leadership-prize-card h3 { margin:0; color:var(--navy); font-size:1.08rem; }
+.leadership-prize-card p { margin:.2rem 0; color:var(--stone); line-height:1.5; }
+.leadership-prize-card p strong { color:var(--slate); }
+.leadership-prize-card .auth-btn { margin-top:auto; }
+.leadership-claims { margin-top:1.75rem; padding-top:1.25rem; border-top:1px solid var(--stone-line); }
+.leadership-claims h3 { margin-top:0; color:var(--navy); font-size:1rem; }
 .leadership-list-row { display:flex; justify-content:space-between; align-items:center; gap:1rem; padding:.75rem 0; border-bottom:1px solid var(--stone-line); }
 .leadership-member-admin { display:grid; gap:.8rem; }
 .leadership-member-admin fieldset { display:flex; flex-wrap:wrap; gap:.7rem; border:1px solid var(--stone-line); border-radius:8px; }
@@ -977,10 +1015,23 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 .leadership-review-card { display:grid; gap:.8rem; }
 .leadership-review-card img { display:block; max-width:min(100%,520px); max-height:420px; object-fit:contain; border-radius:8px; }
 .leadership-review-card>div:last-child { display:flex; flex-wrap:wrap; gap:.5rem; }
-@media(max-width:600px) {
+@media(max-width:680px) {
+  .leadership-hero { min-height:210px; }
+  .leadership-hero-mark { width:82px; height:82px; border-radius:25px; font-size:1.8rem; }
+  .leadership-hero-mark::before { inset:6px; border-radius:19px; }
+  .leadership-chart { grid-template-columns:1fr; }
+  .leadership-form { grid-template-columns:1fr; }
+  .leadership-form-footer { grid-column:auto; }
+}
+@media(max-width:480px) {
+  .leadership-hero { align-items:flex-start; }
+  .leadership-hero-mark { width:58px; height:58px; border-radius:18px; font-size:1.3rem; }
+  .leadership-hero-mark::before { inset:4px; border-radius:13px; }
+  .leadership-hero-mark i { width:6px; height:6px; }
+  .leadership-section-heading { align-items:flex-start; }
+  .leadership-rotation-badge { padding:.4rem .55rem; font-size:.72rem; }
   .leadership-list-row { align-items:flex-start; flex-direction:column; }
   .leadership-member-admin fieldset { display:grid; }
-  .leadership-chart-row { grid-template-columns:1fr; gap:.25rem; }
 }
 
 /* merged Photo Challenge admin tab + gallery of all photos in a theme */

@@ -56,6 +56,10 @@ begin
   insert into public.leadership_chart_members (email, display_name)
   values (new.email, initcap(replace(split_part(new.email, '@', 1), '.', ' ')))
   on conflict (email) do nothing;
+  insert into public.leadership_member_roles (member_email, role_id)
+  select new.email, id from public.leadership_chart_roles
+  where name in ('Opening Prayer', 'Spiritual Thought', 'Do you know them?', 'Closing Prayer')
+  on conflict (member_email, role_id) do nothing;
   return new;
 end $$;
 
@@ -63,6 +67,13 @@ drop trigger if exists leadership_chart_member_sync on public.leadership;
 create trigger leadership_chart_member_sync
 after insert or delete on public.leadership
 for each row execute function public.sync_leadership_chart_member();
+
+insert into public.leadership_member_roles (member_email, role_id)
+select members.email, roles.id
+  from public.leadership_chart_members members
+  cross join public.leadership_chart_roles roles
+ where roles.name in ('Opening Prayer', 'Spiritual Thought', 'Do you know them?', 'Closing Prayer')
+on conflict (member_email, role_id) do nothing;
 
 create table if not exists public.leadership_chat_reports (
   id uuid primary key default gen_random_uuid(),
