@@ -40,7 +40,7 @@ end $$;
 -- Run in the Supabase SQL Editor after the existing setup scripts. Safe to rerun.
 alter table public.settings
   add column if not exists portal_banner jsonb not null default '{"enabled":false,"text":"","link_text":"Learn more","link_url":""}'::jsonb,
-  add column if not exists portal_home_sections jsonb not null default '[{"id":"hero","label":"Welcome header","enabled":true},{"id":"shortcuts","label":"Shortcuts above the tiles","enabled":true},{"id":"links","label":"Quick-link tiles","enabled":true},{"id":"announcements","label":"Latest announcements","enabled":true},{"id":"videos","label":"Latest videos","enabled":true},{"id":"faq","label":"Frequently asked questions","enabled":true},{"id":"photo-challenge","label":"Photo Challenge shortcut","enabled":true}]'::jsonb,
+  add column if not exists portal_home_sections jsonb not null default '[{"id":"hero","label":"Welcome header","enabled":true},{"id":"links","label":"Quick-link tiles","enabled":true},{"id":"announcements","label":"Latest announcements","enabled":true},{"id":"videos","label":"Latest videos","enabled":true},{"id":"faq","label":"Frequently asked questions","enabled":true},{"id":"photo-challenge","label":"Photo Challenge shortcut","enabled":true}]'::jsonb,
   add column if not exists portal_tiles jsonb not null default '[{"title":"Calendar","description":"Co-op events, activities, and important dates.","url":"https://calendar.google.com","cta":"Open Google Calendar","icon":"calendar","secondary_text":"Open Family Sync","secondary_url":"https://familysync.latterup.org/"},{"title":"Google Drive","description":"Your files, docs, slides, and sheets.","url":"https://drive.google.com","cta":"Open Google Drive","icon":"drive"},{"title":"Google Chat","description":"Message teachers, classmates, and friends.","url":"https://mail.google.com/chat","cta":"Open Chat","icon":"chat"},{"title":"Email","description":"Check your email and message teachers and friends.","url":"https://mail.google.com","cta":"Open Email","icon":"email"},{"title":"Google Classroom","description":"View assignments, materials, and due dates.","url":"https://classroom.google.com","cta":"Open Classroom","icon":"classroom"},{"title":"Trackers","description":"Your Success Circle and Homeroom to-do and focus lists.","url":"https://pathwaysandpossibilities.netlify.app/tracker","cta":"Open Tracker","icon":"compass"},{"title":"Feedback","description":"Give feedback on anything LU.","url":"https://docs.google.com/forms/d/e/1FAIpQLSfwVwucRiMsnTMPcP-LV25BrLkVb_dBFtxDyX0xMIMqguZisQ/viewform","cta":"Open Form","icon":"document"}]'::jsonb;
 
 -- Ensure the single settings row exists (without overwriting any existing settings).
@@ -879,5 +879,35 @@ update auth.users
        || jsonb_build_object('must_change_password', true)
  where lower(coalesce(raw_user_meta_data->>'must_change_password', 'false')) = 'true'
    and lower(coalesce(raw_app_meta_data->>'must_change_password', 'false')) <> 'true';
+
+notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- update-9-google-drive-videos.sql
+-- =====================================================================
+
+alter table public.videos
+  add column if not exists google_drive_id text;
+
+alter table public.videos drop constraint if exists videos_check;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.videos'::regclass and conname = 'videos_video_source_required'
+  ) then
+    alter table public.videos add constraint videos_video_source_required
+      check (youtube_id is not null or google_drive_id is not null or video_path is not null) not valid;
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.videos'::regclass and conname = 'videos_google_drive_id_format'
+  ) then
+    alter table public.videos add constraint videos_google_drive_id_format
+      check (google_drive_id is null or google_drive_id ~ '^[A-Za-z0-9_-]{10,}$') not valid;
+  end if;
+end $$;
 
 notify pgrst, 'reload schema';

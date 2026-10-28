@@ -70,8 +70,8 @@
         pdfUnavailable: !!x.pdf_path && !urls[x.pdf_path]
       }));
       window.VIDEO_ITEMS = (v.data || []).map(x => ({
-        title: esc(x.title), date: x.date, description: br(x.description), youtubeId: x.youtube_id, videoSrc: urls[x.video_path],
-        videoUnavailable: !x.youtube_id && !!x.video_path && !urls[x.video_path]
+        title: esc(x.title), date: x.date, description: br(x.description), youtubeId: x.youtube_id, googleDriveId: x.google_drive_id, videoSrc: urls[x.video_path],
+        videoUnavailable: !x.youtube_id && !x.google_drive_id && !!x.video_path && !urls[x.video_path]
       }));
       window.LU_CONTENT_ERRORS = { announcements: a.error, videos: v.error };
     }

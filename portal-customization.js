@@ -23,7 +23,6 @@
     photo:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>',
     video:'<rect x="3" y="5" width="13" height="14" rx="2"/><path d="m16 10 5-3v10l-5-3z"/>'
   };
-  const homeSectionOrder = ["hero", "shortcuts", "links", "announcements", "videos", "faq", "photo-challenge"];
   function safeUrl(value) {
     const v = String(value || "").trim();
     if (!v || /[\u0000-\u001f\u007f\\]/.test(v)) return "#";
@@ -52,11 +51,7 @@
         banner = { ...banner, ...(data.portal_banner || {}) };
         if (Array.isArray(data.portal_tiles) && data.portal_tiles.length) tiles = data.portal_tiles;
         if (Array.isArray(data.portal_home_sections) && data.portal_home_sections.length) {
-          homeSections = [...data.portal_home_sections];
-          if (!homeSections.some(item => item.id === "shortcuts")) {
-            const next = homeSections.findIndex(item => homeSectionOrder.indexOf(item.id) > homeSectionOrder.indexOf("shortcuts"));
-            homeSections.splice(next < 0 ? homeSections.length : next, 0, {id:"shortcuts", enabled:true});
-          }
+          homeSections = data.portal_home_sections.filter(item => item.id !== "shortcuts");
         }
       }
     }
@@ -89,7 +84,7 @@
         box.hidden=false;
       }catch(e){console.warn("Photo challenge round unavailable:",e);}})();
       if(homeSections){
-        const map={hero:document.getElementById("top"),shortcuts:document.getElementById("home-shortcuts"),links:document.getElementById("links"),announcements:document.getElementById("announcements"),videos:document.getElementById("videos"),faq:document.getElementById("faq"),"photo-challenge":photo};
+        const map={hero:document.getElementById("top"),links:document.getElementById("links"),announcements:document.getElementById("announcements"),videos:document.getElementById("videos"),faq:document.getElementById("faq"),"photo-challenge":photo};
         homeSections.forEach(item=>{const el=map[item.id];if(!el)return;el.hidden=item.enabled===false;main.appendChild(el);});
       }
     }

@@ -75,9 +75,10 @@ create table public.videos (
   date date not null default current_date,
   description text,
   youtube_id text,                    -- just the ID, e.g. kzTHriM0EUo
+  google_drive_id text,               -- Google Drive file ID for an embedded video
   video_path text,                    -- OR a file in the 'media' bucket
   created_at timestamptz not null default now(),
-  check (youtube_id is not null or video_path is not null)
+  check (youtube_id is not null or google_drive_id is not null or video_path is not null)
 );
 
 create table public.faq (

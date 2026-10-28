@@ -2,7 +2,7 @@ const C = LU_CONFIG, sb = supabase.createClient(C.url, C.key), app = document.ge
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const T = {
   announcements: { label: "Announcements", order: "date", title: "title", f: [["title", "Title"], ["date", "Date", "date"], ["text", "Text", "textarea"], ["pdf_path", "Flyer (PDF or image)", "file", "application/pdf,image/png,image/jpeg,image/webp"], ["publish_at", "Publish at (leave blank to post right away)", "datetime_opt"]] },
-  videos: { label: "Videos", order: "date", title: "title", f: [["title", "Title"], ["date", "Date", "date"], ["description", "Description", "textarea"], ["youtube_id", "YouTube link", "yt"], ["video_path", "…or upload a video file", "file", "video/mp4,video/webm"], ["publish_at", "Publish at (leave blank to post right away)", "datetime_opt"]] },
+  videos: { label: "Videos", order: "date", title: "title", f: [["title", "Title"], ["date", "Date", "date"], ["description", "Description", "textarea"], ["youtube_id", "YouTube video link", "yt"], ["google_drive_id", "Google Drive video link", "drive"], ["publish_at", "Publish at (leave blank to post right away)", "datetime_opt"]] },
   faq: { label: "FAQ", order: "sort_order", asc: 1, title: "question", f: [["question", "Question"], ["answer", "Answer (links and line breaks OK)", "textarea"], ["sort_order", "Order (1 = first)", "number"]] },
   themes: { label: "Photo Challenge", order: "starts_at", title: "title", f: [["title", "Theme"], ["description", "Description", "textarea"], ["starts_at", "Starts", "datetime"], ["ends_at", "Ends (next theme starts then)", "datetime"], ["video_path", "Finished video (optional)", "file", "video/mp4,video/webm"]] },
 };
@@ -16,6 +16,16 @@ const ytId = v => {
   const value = v.trim();
   const id = (value.match(/(?:v=|youtu\.be\/|shorts\/|embed\/|live\/)([\w-]{11})(?:[?&#/]|$)/) || [, value])[1];
   return /^[\w-]{11}$/.test(id) ? id : null;
+};
+const driveId = value => {
+  const input = value.trim();
+  if (/^[\w-]{10,}$/.test(input)) return input;
+  try {
+    const url = new URL(input);
+    if (!/^https?:$/.test(url.protocol) || !/(^|\.)drive\.google\.com$/i.test(url.hostname)) return null;
+    const id = url.pathname.match(/^\/file\/d\/([\w-]{10,})(?:\/|$)/)?.[1] || url.searchParams.get("id");
+    return /^[\w-]{10,}$/.test(id || "") ? id : null;
+  } catch { return null; }
 };
 
 async function boot() {
@@ -106,6 +116,7 @@ async function form(row) {
     const v = d[k] ?? "";
     if (type === "textarea") return `<label>${lab}<textarea name="${k}" rows="4">${esc(v)}</textarea></label>`;
     if (type === "file") return `<label>${lab}${v ? ` <small>Current file kept unless you choose a new one</small>` : ""}<input type="file" name="${k}" accept="${acc}"></label>`;
+    if (type === "drive") return `<label>${lab}<input name="${k}" value="${esc(v)}" placeholder="Paste a Google Drive sharing link or file ID"><small class="drive-sharing-reminder"><strong>Before saving:</strong> In Google Drive, set the video's General access to “Anyone with the link” so students can watch it. Use either a YouTube link or a Google Drive link.</small></label>`;
     if (type === "datetime_opt") return `<label>${lab}<input type="datetime-local" name="${k}" value="${v ? loc(v) : ""}"><small>Students see it at this date and time. Blank = visible immediately.</small></label>`;
     if (type === "datetime") return `<label>${lab}<input type="datetime-local" name="${k}" value="${v ? loc(v) : ""}" required></label>`;
     return `<label>${lab}<input name="${k}" type="${type === "yt" ? "text" : type || "text"}" value="${esc(type === "date" && !v ? new Date().toISOString().slice(0, 10) : v)}" ${["title", "question", "answer"].includes(k) ? "required" : ""}></label>`;
@@ -131,16 +142,25 @@ async function form(row) {
         if (value && !id) { msg.textContent = "Enter a valid YouTube video URL or 11-character video ID."; return; }
         out[k] = id;
       }
+      else if (type === "drive") {
+        const value = inp.value.trim(), id = value ? driveId(value) : null;
+        if (value && !id) { msg.textContent = "Enter a valid Google Drive video link or file ID."; return; }
+        out[k] = id;
+      }
       else if (type === "number") out[k] = Number(inp.value) || 0;
       else out[k] = inp.value.trim() || null;
     }
     if (LT === "videos") {
       const youtubeInput = e.target.elements.youtube_id.value.trim();
-      const youtubeChanged = row
-        ? (youtubeInput ? ytId(youtubeInput) : null) !== row.youtube_id
-        : !!youtubeInput;
-      if (e.target.elements.video_path.files[0]) out.youtube_id = null;
-      else if (youtubeChanged) {
+      const driveInput = e.target.elements.google_drive_id.value.trim();
+      if (youtubeInput && driveInput) { msg.textContent = "Use either a YouTube link or a Google Drive link, not both."; return; }
+      if (!youtubeInput && !driveInput && !row?.video_path) {
+        msg.textContent = "Add a YouTube link or a Google Drive link before saving.";
+        return;
+      }
+      const sourceChanged = out.youtube_id !== (row?.youtube_id ?? null) ||
+        out.google_drive_id !== (row?.google_drive_id ?? null);
+      if (sourceChanged) {
         out.video_path = null;
         if (row?.video_path) replaced.push(row.video_path);
       }
@@ -207,7 +227,6 @@ function portalTileForm(t,i){return `<div class="portal-tile-edit"><div class="p
 
 const DEFAULT_HOME_SECTIONS = [
   {id:"hero", label:"Welcome header", enabled:true},
-  {id:"shortcuts", label:"Shortcuts above the tiles", enabled:true},
   {id:"links", label:"Quick-link tiles", enabled:true},
   {id:"announcements", label:"Latest announcements", enabled:true},
   {id:"videos", label:"Latest videos", enabled:true},
@@ -226,7 +245,7 @@ async function homeLayoutUI(host = app) {
     const next=sections.findIndex(s=>DEFAULT_HOME_SECTIONS.findIndex(d=>d.id===s.id)>defaultIndex);
     sections.splice(next<0?sections.length:next,0,missing);
   });
-  host.innerHTML = (host === app ? tabs() : "") + `<section class="portal-admin-section"><h3>Home page layout</h3><p>Choose which sections appear on the home page and change their order, including the shortcuts above the tiles. The Photo Challenge shortcut gives students a clear path to upload photos. Your existing tiles, announcement banner, and content remain intact.</p>${error ? `<p class="auth-error">Couldn't load settings: ${esc(error.message)}</p>` : ""}<div id="home-section-editor" aria-label="Drag sections to reorder">${sections.map((s)=>`<div class="home-section-edit" data-section="${s.id}" draggable="true"><span class="home-drag-handle" aria-hidden="true">Move</span><label class="inline-check"><input type="checkbox" name="enabled" ${s.enabled!==false?"checked":""}> ${esc(s.label)}</label><span class="home-drag-hint">Drag to reorder</span></div>`).join("")}</div><div class="portal-admin-actions"><button class="auth-btn" id="save-home-layout">Save home page</button></div><small id="home-layout-msg"></small></section>`;
+  host.innerHTML = (host === app ? tabs() : "") + `<section class="portal-admin-section"><h3>Home page layout</h3><p>Choose which sections appear on the home page and change their order. The Photo Challenge shortcut gives students a clear path to share photos. Your tiles, announcement banner, and content remain intact.</p>${error ? `<p class="auth-error">Couldn't load settings: ${esc(error.message)}</p>` : ""}<div id="home-section-editor" aria-label="Drag sections to reorder">${sections.map((s)=>`<div class="home-section-edit" data-section="${s.id}" draggable="true"><span class="home-drag-handle" aria-hidden="true">Move</span><label class="inline-check"><input type="checkbox" name="enabled" ${s.enabled!==false?"checked":""}> ${esc(s.label)}</label><span class="home-drag-hint">Drag to reorder</span></div>`).join("")}</div><div class="portal-admin-actions"><button class="auth-btn" id="save-home-layout">Save home page</button></div><small id="home-layout-msg"></small></section>`;
   if (host === app) wire();
   const editor=document.getElementById("home-section-editor");
   let dragging=null;

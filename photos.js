@@ -96,7 +96,38 @@
     return m;
   };
   const missingPhoto = label => `<div class="photo-missing-file" role="img" aria-label="${esc(label)} unavailable">${esc(label)} unavailable</div>`;
-  const shrink = f => new Promise((ok, no) => { const i = new Image(); i.onload = () => { const s = Math.min(1, 1600 / Math.max(i.width, i.height)), c = document.createElement("canvas"); c.width = i.width * s; c.height = i.height * s; c.getContext("2d").drawImage(i, 0, 0, c.width, c.height); c.toBlob(ok, "image/jpeg", .85); }; i.onerror = no; i.src = URL.createObjectURL(f); });
+  const shrink = file => new Promise((resolve, reject) => {
+    const image = new Image(), objectUrl = URL.createObjectURL(file);
+    const cleanup = () => {
+      image.onload = null;
+      image.onerror = null;
+      URL.revokeObjectURL(objectUrl);
+    };
+    image.onload = () => {
+      try {
+        const scale = Math.min(1, 1600 / Math.max(image.naturalWidth, image.naturalHeight));
+        const canvas = document.createElement("canvas");
+        canvas.width = image.naturalWidth * scale;
+        canvas.height = image.naturalHeight * scale;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Your browser couldn't prepare this image for upload.");
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(blob => {
+          cleanup();
+          if (blob) resolve(blob);
+          else reject(new Error("Your browser couldn't encode this image. Try a different JPG or PNG."));
+        }, "image/jpeg", .85);
+      } catch (error) {
+        cleanup();
+        reject(error);
+      }
+    };
+    image.onerror = () => {
+      cleanup();
+      reject(new Error("This image couldn't be read. Try a different JPG or PNG."));
+    };
+    image.src = objectUrl;
+  });
 
   async function renderCurrent() {
     const box = $("current");

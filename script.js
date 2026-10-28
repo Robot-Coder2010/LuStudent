@@ -94,6 +94,19 @@
           </iframe>
         </div>
       `;
+    } else if (/^[\w-]{10,}$/.test(item.googleDriveId || "")) {
+      mediaHtml = `
+        <div class="video-frame-wrap">
+          <iframe
+            src="https://drive.google.com/file/d/${item.googleDriveId}/preview"
+            title="${item.title}"
+            frameborder="0"
+            allow="autoplay"
+            allowfullscreen
+            loading="lazy">
+          </iframe>
+        </div>
+      `;
     } else if (!item.youtubeId && item.videoSrc) {
       // Encode spaces/special characters in the path so filenames with
       // spaces (e.g. "December 2025 SL Video.mp4") still load correctly.

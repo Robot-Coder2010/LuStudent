@@ -88,17 +88,6 @@ main > section:last-of-type { padding-bottom: var(--section-space); }
   right: clamp(0px, 5vw, 80px); top: clamp(62%, 66%, 70%); transform: rotate(9deg);
 }
 .hero-lede { max-width: 36ch; margin: clamp(48px, 6vw, 88px) auto 0; font-size: clamp(1.05rem, 1.5vw, 1.3rem); color: var(--navy); }
-.hero-index {
-  display: grid; grid-template-columns: repeat(4, 1fr); margin-top: clamp(56px, 8vw, 112px);
-  border-top: var(--rule); text-align: left;
-}
-.home-shortcuts .hero-index { margin-top: clamp(32px, 4.5vw, 56px); }
-.hero-index a {
-  display: block; padding: 18px 0 0; color: var(--navy); text-decoration: none;
-  font-family: var(--font-display); font-size: clamp(1.2rem, 2.2vw, 1.9rem);
-}
-.hero-index a:hover { box-shadow: inset 0 -.2em 0 var(--gold); }
-
 /* ---------- asymmetric editorial grid for home sections ---------- */
 .links > .wrap, .announcements > .wrap, .videos > .wrap, .faq > .wrap,
 .announcements-page > .wrap, .videos-page > .wrap {
@@ -208,7 +197,6 @@ main > section:last-of-type { padding-bottom: var(--section-space); }
   .section-head-row, .photo-style-content .photo-section-heading { position: static; margin-bottom: 40px; }
   .links .section-sub, .faq .section-sub { margin-bottom: 40px; }
   .video-grid { grid-template-columns: 1fr; }
-  .hero-index { grid-template-columns: repeat(2, 1fr); row-gap: 24px; }
   .hero-mark { top: auto; bottom: 34%; right: 0; }
   .photo-style-hero .eyebrow, .photo-hero-lede { grid-column: 1 / -1; }
   .photo-round-card { display: block; }
@@ -282,10 +270,9 @@ main > section:last-of-type { padding-bottom: var(--section-space); }
 .hero .eyebrow { margin-bottom: 1.1rem; }
 .hero h1 { font-size: clamp(2.2rem, 5.6vw, 4.8rem); line-height: 1; }
 .hero-lede { margin-top: clamp(22px, 3vw, 36px); font-size: clamp(1rem, 1.3vw, 1.15rem); }
-.hero-index { margin-top: clamp(32px, 4.5vw, 56px); }
 .hero-mark { display: none; }
 
-/* no gap or second rule under the quick start row */
+/* Keep the tile grid close to the hero without an extra divider. */
 .links { padding-top: clamp(40px, 5vw, 64px) !important; }
 .links > .wrap { border-top: 0 !important; padding-top: 0 !important; }
 
@@ -323,7 +310,7 @@ main > section:last-of-type { padding-bottom: var(--section-space); }
    ========================================================================== */
 h1, h2, h3, h4, .section-title, .page-title, .card-title, .brand-name, .footer-brand,
 .faq-question, .announcement-question, .announcement-title-text, .video-title,
-.photo-theme-card strong, .all-title, .hero-index a, .photo-round-copy h2, .photo-section-heading h2 {
+.photo-theme-card strong, .all-title, .photo-round-copy h2, .photo-section-heading h2 {
   font-family: var(--font-display) !important;
   font-weight: 400 !important;
   font-synthesis: none;
