@@ -4,8 +4,15 @@
 create table if not exists public.leadership_hub_settings (
   id int primary key default 1 check (id = 1),
   rotation_weekday int not null default 1 check (rotation_weekday between 0 and 6),
-  approval_points int not null default 1 check (approval_points between 0 and 10000)
+  approval_points int not null default 1 check (approval_points between 0 and 10000),
+  visibility text not null default 'leaders_admins' check (visibility in ('off', 'admins', 'leaders_admins'))
 );
+alter table public.leadership_hub_settings
+  add column if not exists visibility text not null default 'leaders_admins';
+alter table public.leadership_hub_settings
+  drop constraint if exists leadership_hub_settings_visibility_check;
+alter table public.leadership_hub_settings
+  add constraint leadership_hub_settings_visibility_check check (visibility in ('off', 'admins', 'leaders_admins'));
 insert into public.leadership_hub_settings (id) values (1) on conflict (id) do nothing;
 
 create table if not exists public.leadership_chart_members (
@@ -26,6 +33,12 @@ create table if not exists public.leadership_chart_roles (
   name text not null unique check (length(trim(name)) between 1 and 80),
   sort_order int not null default 0
 );
+insert into public.leadership_chart_roles (name, sort_order) values
+  ('Opening Prayer', 1),
+  ('Spiritual Thought', 2),
+  ('Do you know them?', 3),
+  ('Closing Prayer', 4)
+on conflict (name) do update set sort_order = excluded.sort_order;
 
 create table if not exists public.leadership_member_roles (
   member_email text not null references public.leadership_chart_members(email) on delete cascade,
@@ -116,6 +129,16 @@ create trigger leadership_claim_user_email
 before insert on public.leadership_prize_claims
 for each row execute function public.set_leadership_claim_user_email();
 
+create or replace function public.can_view_leadership_hub()
+returns boolean language sql stable security definer set search_path = public, pg_temp as $$
+  select case coalesce((select visibility from public.leadership_hub_settings where id = 1), 'leaders_admins')
+    when 'admins' then public.is_admin()
+    when 'leaders_admins' then public.is_admin() or public.is_leader()
+    else false
+  end
+$$;
+grant execute on function public.can_view_leadership_hub() to authenticated;
+
 alter table public.leadership_hub_settings enable row level security;
 alter table public.leadership_chart_members enable row level security;
 alter table public.leadership_chart_roles enable row level security;
@@ -133,21 +156,21 @@ create policy "leadership hub settings admin" on public.leadership_hub_settings
 
 drop policy if exists "leadership chart members read" on public.leadership_chart_members;
 create policy "leadership chart members read" on public.leadership_chart_members
-  for select to authenticated using (public.is_leader() or public.is_admin());
+  for select to authenticated using (public.is_admin() or public.can_view_leadership_hub());
 drop policy if exists "leadership chart members admin" on public.leadership_chart_members;
 create policy "leadership chart members admin" on public.leadership_chart_members
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists "leadership chart roles read" on public.leadership_chart_roles;
 create policy "leadership chart roles read" on public.leadership_chart_roles
-  for select to authenticated using (public.is_leader() or public.is_admin());
+  for select to authenticated using (public.is_admin() or public.can_view_leadership_hub());
 drop policy if exists "leadership chart roles admin" on public.leadership_chart_roles;
 create policy "leadership chart roles admin" on public.leadership_chart_roles
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists "leadership member roles read" on public.leadership_member_roles;
 create policy "leadership member roles read" on public.leadership_member_roles
-  for select to authenticated using (public.is_leader() or public.is_admin());
+  for select to authenticated using (public.is_admin() or public.can_view_leadership_hub());
 drop policy if exists "leadership member roles admin" on public.leadership_member_roles;
 create policy "leadership member roles admin" on public.leadership_member_roles
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
@@ -155,7 +178,7 @@ create policy "leadership member roles admin" on public.leadership_member_roles
 drop policy if exists "leadership chat reports insert" on public.leadership_chat_reports;
 create policy "leadership chat reports insert" on public.leadership_chat_reports
   for insert to authenticated with check (
-    (public.is_leader() or public.is_admin())
+    public.can_view_leadership_hub()
     and reporter_id = auth.uid()
     and screenshot_path like (auth.uid()::text || '/%')
     and status = 'pending'
@@ -166,12 +189,12 @@ create policy "leadership chat reports insert" on public.leadership_chat_reports
 drop policy if exists "leadership chat reports read" on public.leadership_chat_reports;
 create policy "leadership chat reports read" on public.leadership_chat_reports
   for select to authenticated using (public.is_admin() or (
-    (public.is_leader() or public.is_admin()) and reporter_id = auth.uid()
+    public.can_view_leadership_hub() and reporter_id = auth.uid()
   ));
 
 drop policy if exists "leadership prizes read" on public.leadership_prizes;
 create policy "leadership prizes read" on public.leadership_prizes
-  for select to authenticated using (public.is_admin() or ((public.is_leader() or public.is_admin()) and active));
+  for select to authenticated using (public.is_admin() or (public.can_view_leadership_hub() and active));
 drop policy if exists "leadership prizes admin" on public.leadership_prizes;
 create policy "leadership prizes admin" on public.leadership_prizes
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
@@ -179,7 +202,7 @@ create policy "leadership prizes admin" on public.leadership_prizes
 drop policy if exists "leadership prize claims read" on public.leadership_prize_claims;
 create policy "leadership prize claims read" on public.leadership_prize_claims
   for select to authenticated using (public.is_admin() or (
-    (public.is_leader() or public.is_admin()) and user_id = auth.uid()
+    public.can_view_leadership_hub() and user_id = auth.uid()
   ));
 
 grant select, update on public.leadership_hub_settings to authenticated;
@@ -199,14 +222,17 @@ drop policy if exists "leadership report screenshot upload" on storage.objects;
 create policy "leadership report screenshot upload" on storage.objects for insert to authenticated
   with check (
     bucket_id = 'leadership-reports'
-    and (public.is_leader() or public.is_admin())
+    and public.can_view_leadership_hub()
     and (storage.foldername(name))[1] = auth.uid()::text
   );
 drop policy if exists "leadership report screenshot read" on storage.objects;
 create policy "leadership report screenshot read" on storage.objects for select to authenticated
   using (
     bucket_id = 'leadership-reports'
-    and (public.is_admin() or (storage.foldername(name))[1] = auth.uid()::text)
+    and (
+      public.is_admin()
+      or (public.can_view_leadership_hub() and (storage.foldername(name))[1] = auth.uid()::text)
+    )
   );
 drop policy if exists "leadership report screenshot admin delete" on storage.objects;
 create policy "leadership report screenshot admin delete" on storage.objects for delete to authenticated
@@ -255,8 +281,8 @@ declare
   reserved int;
   claim_id uuid;
 begin
-  if caller is null or not (public.is_leader() or public.is_admin()) then
-    raise exception 'Student Leadership sign-in required.';
+  if caller is null or not public.can_view_leadership_hub() then
+    raise exception 'Student Leadership access is disabled or not available for this account.';
   end if;
   perform 1 from auth.users where id = caller for update;
   select * into prize from public.leadership_prizes where id = p_prize_id and active for share;

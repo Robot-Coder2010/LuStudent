@@ -5,45 +5,46 @@
   const showError = (host, message) => {
     host.innerHTML = `<p class="auth-error">${esc(message)}</p>`;
   };
+  const chartRoleNames = ["Opening Prayer", "Spiritual Thought", "Do you know them?", "Closing Prayer"];
   const weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-  function cycleIndex(count, weekday) {
-    if (!count) return 0;
+  function rotationWeekIndex(weekday) {
     const now = new Date();
     const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
     const thisWeekday = new Date(todayUtc).getUTCDay();
     const daysSinceRotation = (thisWeekday - weekday + 7) % 7;
     const lastRotation = new Date(todayUtc - daysSinceRotation * 86400000);
-    const firstSunday = Date.UTC(2024, 0, 7);
-    const firstRotation = new Date(firstSunday + ((weekday + 7) % 7) * 86400000);
-    if (lastRotation < firstRotation) return 0;
-    return Math.floor((lastRotation.getTime() - firstRotation.getTime()) / (7 * 86400000)) % count;
+    const firstRotation = Date.UTC(2024, 0, 7) + weekday * 86400000;
+    if (lastRotation.getTime() < firstRotation) return 0;
+    return Math.floor((lastRotation.getTime() - firstRotation) / (7 * 86400000));
+  }
+
+  function currentAssignments(members, roleNames, weekIndex) {
+    const assigned = new Set();
+    return roleNames.map((role, roleIndex) => {
+      const candidates = members.filter(member => member.in_cycle && member.roles.includes(role));
+      if (!candidates.length) return { role, member: null };
+      const start = (weekIndex + roleIndex) % candidates.length;
+      const rotated = candidates.map((_, index) => candidates[(start + index) % candidates.length]);
+      const member = rotated.find(candidate => !assigned.has(candidate.email)) || candidates[start];
+      assigned.add(member.email);
+      return { role, member };
+    });
   }
 
   function renderChart(host, members, weekday) {
-    const rotating = members.filter(member => member.in_cycle);
-    if (!rotating.length) {
-      host.innerHTML = '<section class="leadership-card"><h2>Student Leadership</h2><p>The member rotation has not been set up yet.</p></section>';
-      return;
-    }
-    let active = cycleIndex(rotating.length, weekday);
-    const paint = () => {
-      const member = rotating[active];
-      host.innerHTML = `<section class="leadership-card">
-        <p class="eyebrow">Student Leadership · Weekly spotlight</p>
-        <h2>${esc(member.display_name)}</h2>
-        <p class="leadership-member-email">${esc(member.email)}</p>
-        <div class="leadership-role-list">${member.roles.length
-          ? member.roles.map(role => `<span class="via-badge">${esc(role)}</span>`).join(" ")
-          : "<span>Student Leadership member</span>"}</div>
-        <div class="leadership-carousel-controls"><button class="auth-btn alt" type="button" data-prev aria-label="Previous member">Previous</button>
-          <span>${active + 1} of ${rotating.length}</span>
-          <button class="auth-btn alt" type="button" data-next aria-label="Next member">Next</button></div>
-      </section>`;
-      host.querySelector("[data-prev]").onclick = () => { active = (active + rotating.length - 1) % rotating.length; paint(); };
-      host.querySelector("[data-next]").onclick = () => { active = (active + 1) % rotating.length; paint(); };
-    };
-    paint();
+    const assignments = currentAssignments(members, chartRoleNames, rotationWeekIndex(weekday));
+    host.innerHTML = `<section class="leadership-card">
+      <p class="eyebrow">Student Leadership · Weekly assignments</p>
+      <h2>This week's chart</h2>
+      <p>Assignments change every ${weekdayNames[weekday]} (UTC).</p>
+      <div class="leadership-chart" role="table" aria-label="Weekly Student Leadership roles">
+        ${assignments.map(({ role, member }) => `<div class="leadership-chart-row" role="row">
+          <strong role="cell">${esc(role)}</strong>
+          <span role="cell">${member ? esc(member.display_name) : "No member assigned"}</span>
+        </div>`).join("")}
+      </div>
+    </section>`;
   }
 
   async function load() {
@@ -56,18 +57,24 @@
     const { data: role, error: roleError } = await sb.rpc("my_role");
     if (roleError) return showError(app, "Student Leadership access couldn't be verified. Please try again later.");
     if (!["admin", "leader"].includes(role)) {
-      app.innerHTML = '<section class="leadership-card"><h1>Student Leadership</h1><p>This page is only available to signed-in Student Leadership members and admins.</p><a class="auth-btn" href="index.html">Back to portal</a></section>';
+      location.replace("index.html");
       return;
     }
 
     const [settingsResult, membersResult, rolesResult, assignmentsResult] = await Promise.all([
-      sb.from("leadership_hub_settings").select("rotation_weekday,approval_points").eq("id", 1).single(),
+      sb.from("leadership_hub_settings").select("rotation_weekday,approval_points,visibility").eq("id", 1).single(),
       sb.from("leadership_chart_members").select("email,display_name,in_cycle,sort_order").order("sort_order").order("display_name"),
-      sb.from("leadership_chart_roles").select("id,name,sort_order").order("sort_order").order("name"),
+      sb.from("leadership_chart_roles").select("id,name,sort_order").in("name", chartRoleNames).order("sort_order").order("name"),
       sb.from("leadership_member_roles").select("member_email,role_id"),
     ]);
     const failed = [settingsResult, membersResult, rolesResult, assignmentsResult].find(result => result.error);
     if (failed) return showError(app, `The Student Leadership hub could not load: ${failed.error.message}. Ask an admin to run update-10-student-leadership-hub.sql.`);
+    const mayViewHub = settingsResult.data.visibility === "leaders_admins"
+      || (settingsResult.data.visibility === "admins" && role === "admin");
+    if (!mayViewHub) {
+      location.replace("index.html");
+      return;
+    }
     const roleNames = new Map(rolesResult.data.map(item => [item.id, item.name]));
     const assignments = new Map();
     assignmentsResult.data.forEach(item => {
@@ -79,7 +86,7 @@
 
     app.innerHTML = `<section class="page-hero photo-style-hero leadership-hero"><p class="eyebrow">Latter UP · Student community</p>
       <h1 class="page-title">Student Leadership</h1><p>Meet the people serving our community and report your Google Chat conversations.</p></section>
-      <div id="leadership-spotlight"></div>
+      <section id="weekly-role-chart"></section>
       <section class="leadership-section" id="report-section"><h2>Report My Chats</h2>
         <p>Upload one screenshot of a Google Chat conversation and tell us who you chatted with. Reports are reviewed by an admin. Approved reports earn ${settingsResult.data.approval_points} points.</p>
         <form id="chat-report-form" class="leadership-form">
@@ -90,7 +97,7 @@
       <section class="leadership-section" id="points-section"><h2>Points and prizes</h2><div id="points-summary">Loading your points…</div>
         <div id="leadership-prizes" class="leadership-prize-grid"></div>
         <h3>My prize claims</h3><div id="my-prize-claims"></div></section>`;
-    renderChart(document.getElementById("leadership-spotlight"), members, settingsResult.data.rotation_weekday);
+    renderChart(document.getElementById("weekly-role-chart"), members, settingsResult.data.rotation_weekday);
     await wireReports(session.user);
     await loadRewards(session.user.id);
   }

@@ -6,6 +6,7 @@ const T = {
   faq: { label: "FAQ", order: "sort_order", asc: 1, title: "question", f: [["question", "Question"], ["answer", "Answer (links and line breaks OK)", "textarea"], ["sort_order", "Order (1 = first)", "number"]] },
   themes: { label: "Photo Challenge", order: "starts_at", title: "title", f: [["title", "Theme"], ["description", "Description", "textarea"], ["starts_at", "Starts", "datetime"], ["ends_at", "Ends (next theme starts then)", "datetime"], ["video_path", "Finished video (optional)", "file", "video/mp4,video/webm"]] },
 };
+const LEADERSHIP_CHART_ROLES = ["Opening Prayer", "Spiritual Thought", "Do you know them?", "Closing Prayer"];
 let cur = "announcements", ROLE = "student";
 const loc = v => { const d = new Date(v); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16); };
 const isValidTimeZone = value => {
@@ -418,7 +419,7 @@ async function peopleUI(table, heading, blurb, addLabel, btnText) {
   const rows = data ?? [];
   const me = (await sb.auth.getSession()).data.session.user.email.toLowerCase();
   app.innerHTML = tabs() + `<h3>${heading}</h3><p><small>${blurb}</small></p>${error ? `<p class="auth-error">${esc(error.message)}, run the latest SQL update first.</p>` : ""}` +
-    rows.map(a => `<div class="row"><span>${esc(a.email)}</span>${table === "admins" && a.email === me ? "<small>(you)</small>" : `<button class="auth-btn alt" data-rm="${esc(a.email)}">Remove</button>`}</div>`).join("") +
+    rows.map(a => `<div class="row"><span>${esc(a.email)}</span>${table === "leadership" ? "<small>Manage chart participation below; membership is retained.</small>" : table === "admins" && a.email === me ? "<small>(you)</small>" : `<button class="auth-btn alt" data-rm="${esc(a.email)}">Remove</button>`}</div>`).join("") +
     `<form id="aa"><label>${addLabel}<input type="email" name="e" placeholder="name@latterup.org" required></label><div><button class="auth-btn" type="submit">${btnText}</button></div><small id="msg"></small></form>`;
   wire();
   app.querySelectorAll("[data-rm]").forEach(b => b.onclick = async () => { if (confirm("Remove " + b.dataset.rm + " from " + heading.toLowerCase() + "?")) { const { data, error } = await sb.from(table).delete().eq("email", b.dataset.rm).select("email").maybeSingle(); if (error || !data) return alert("Could not remove " + b.dataset.rm + ": " + (error?.message || "no record was deleted")); peopleUI(table, heading, blurb, addLabel, btnText); } });
@@ -451,7 +452,7 @@ async function studentLeadershipUI() {
   const [settingsResult, membersResult, rolesResult, assignmentResult, reportsResult, prizesResult, claimsResult] = await Promise.all([
     sb.from("leadership_hub_settings").select("*").eq("id", 1).single(),
     sb.from("leadership_chart_members").select("*").order("sort_order").order("display_name"),
-    sb.from("leadership_chart_roles").select("*").order("sort_order").order("name"),
+    sb.from("leadership_chart_roles").select("*").in("name", LEADERSHIP_CHART_ROLES).order("sort_order").order("name"),
     sb.from("leadership_member_roles").select("*"),
     sb.from("leadership_chat_reports").select("*").eq("status", "pending").order("created_at"),
     sb.from("leadership_prizes").select("*").order("created_at"),
@@ -471,24 +472,27 @@ async function studentLeadershipUI() {
   });
   app.innerHTML = tabs() + `<h2>Student Leadership management</h2>
     <form id="lh-settings" class="admin-schedule">
-      <h3>Weekly spotlight and chat points</h3>
-      <label>Change the featured member on (UTC)
+      <h3>Hub visibility, weekly roles and chat points</h3>
+      <label>Student Leadership tab access
+        <select name="visibility">
+          <option value="off" ${settings.visibility === "off" ? "selected" : ""}>Off</option>
+          <option value="admins" ${settings.visibility === "admins" ? "selected" : ""}>Admins only</option>
+          <option value="leaders_admins" ${settings.visibility === "leaders_admins" ? "selected" : ""}>Student Leadership and admins</option>
+        </select>
+      </label>
+      <label>Change role assignments on (UTC)
         <select name="rotation_weekday">${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((day, index) => `<option value="${index}" ${settings.rotation_weekday === index ? "selected" : ""}>${day}</option>`).join("")}</select>
       </label>
       <label>Points for each approved chat report<input name="approval_points" type="number" min="0" max="10000" value="${settings.approval_points}" required></label>
       <div><button class="auth-btn" type="submit">Save settings</button></div><small id="lh-settings-message"></small>
     </form>
-    <section class="leadership-admin-section"><h3>Chart roles</h3>
-      <form id="lh-add-role"><label>New role<input name="name" maxlength="80" required></label><button class="auth-btn" type="submit">Add role</button><small id="lh-role-message"></small></form>
-      <div id="lh-role-list">${roles.map(role => `<div class="leadership-list-row"><span>${esc(role.name)}</span><button class="auth-btn alt" type="button" data-delete-role="${role.id}">Remove role</button></div>`).join("") || "<p>No roles yet. Add roles, then assign them to members below.</p>"}</div>
-    </section>
-    <section class="leadership-admin-section"><h3>Spotlight members</h3>
-      <p>Removing someone from the rotation does not remove them from Student Leadership.</p>
+    <section class="leadership-admin-section"><h3>Weekly role chart assignments</h3>
+      <p>Choose the roles each member can rotate through and who is included in the chart. These controls do not remove anyone from Student Leadership.</p>
       <div id="lh-member-list">${members.map(member => `<article class="leadership-member-admin" data-member="${esc(member.email)}">
         <label>Display name<input data-display-name maxlength="120" value="${esc(member.display_name)}"></label>
         <label>Rotation order<input data-sort-order type="number" step="1" value="${member.sort_order}"></label>
         <label class="chk"><input data-in-cycle type="checkbox" ${member.in_cycle ? "checked" : ""}> Include in weekly rotation</label>
-        <fieldset><legend>Assigned roles</legend>${roles.map(role => `<label class="chk"><input data-member-role type="checkbox" value="${role.id}" ${(roleIdsByMember.get(member.email) || []).includes(role.id) ? "checked" : ""}> ${esc(role.name)}</label>`).join("") || "<small>Add a role above to assign one.</small>"}</fieldset>
+        <fieldset><legend>Eligible roles</legend>${roles.map(role => `<label class="chk"><input data-member-role type="checkbox" value="${role.id}" ${(roleIdsByMember.get(member.email) || []).includes(role.id) ? "checked" : ""}> ${esc(role.name)}</label>`).join("") || "<small>Run update-10-student-leadership-hub.sql to add the chart roles.</small>"}</fieldset>
         <button class="auth-btn" type="button" data-save-member>Save member</button><small data-member-message></small>
       </article>`).join("") || "<p>No Student Leadership members have been added yet.</p>"}</div>
     </section>
@@ -505,26 +509,12 @@ async function studentLeadershipUI() {
     event.preventDefault();
     const form = event.target.elements;
     const { error } = await sb.from("leadership_hub_settings").update({
+      visibility: form.visibility.value,
       rotation_weekday: Number(form.rotation_weekday.value),
       approval_points: Number(form.approval_points.value),
     }).eq("id", 1);
     settingsMessage.textContent = error ? `Could not save settings: ${error.message}` : "Settings saved.";
   };
-  const roleForm = document.getElementById("lh-add-role"), roleMessage = document.getElementById("lh-role-message");
-  roleForm.onsubmit = async event => {
-    event.preventDefault();
-    const name = event.target.elements.name.value.trim();
-    const { error } = await sb.from("leadership_chart_roles").insert({ name, sort_order: roles.length });
-    if (error) { roleMessage.textContent = `Could not add role: ${error.message}`; return; }
-    await studentLeadershipUI();
-  };
-  document.querySelectorAll("[data-delete-role]").forEach(button => button.onclick = async () => {
-    const role = roles.find(item => item.id === button.dataset.deleteRole);
-    if (!role || !confirm(`Remove the "${role.name}" role from the chart?`)) return;
-    const { error } = await sb.from("leadership_chart_roles").delete().eq("id", role.id);
-    if (error) { alert(`Could not remove role: ${error.message}`); return; }
-    await studentLeadershipUI();
-  });
   document.querySelectorAll("[data-save-member]").forEach(button => button.onclick = async () => {
     const card = button.closest("[data-member]"), email = card.dataset.member, message = card.querySelector("[data-member-message]");
     button.disabled = true;

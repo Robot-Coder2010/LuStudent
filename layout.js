@@ -63,11 +63,15 @@
   else {
     const u = session.user, name = u.app_metadata?.full_name || u.email, adm = await (async () => { const r = await sb.rpc("my_role"); return r.data || ((await sb.rpc("is_admin")).data ? "admin" : "student"); })();
     if (adm === "admin" || adm === "leader") {
-      const link = document.createElement("a");
-      link.href = "leadership.html";
-      link.textContent = "Student Leadership";
-      if (page === "leadership.html") link.setAttribute("aria-current", "page");
-      $("nav").appendChild(link);
+      const { data: canViewLeadershipHub, error: leadershipHubError } = await sb.rpc("can_view_leadership_hub");
+      if (leadershipHubError) console.error("Student Leadership tab access could not be checked:", leadershipHubError);
+      if (canViewLeadershipHub) {
+        const link = document.createElement("a");
+        link.href = "leadership.html";
+        link.textContent = "Student Leadership";
+        if (page === "leadership.html") link.setAttribute("aria-current", "page");
+        $("nav").appendChild(link);
+      }
     }
     const previewOption = window.LU_LOCAL_HOST ? '<button id="preview-toggle" type="button">Use local preview</button>' : "";
     $("pf").innerHTML = `<button class="icon-btn avatar" id="pb" aria-label="Profile menu" aria-haspopup="true">${name[0].toUpperCase()}</button>
