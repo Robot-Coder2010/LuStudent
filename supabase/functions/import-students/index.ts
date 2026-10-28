@@ -1,5 +1,5 @@
 // Supabase Edge Function: import-students
-// Lets a signed-in ADMIN create (or reset) student logins in bulk from the admin page.
+// Lets a signed-in ADMIN prepare Google sign-in accounts in bulk from the admin page.
 // Supabase supplies the secret key to this function automatically; you never handle it.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
@@ -34,41 +34,25 @@ Deno.serve(async (req) => {
       return json({ error: "Admins only." }, 403);
     }
 
-    const { students, password, random, reset } = await req.json();
+    const { students } = await req.json();
     if (!Array.isArray(students) || students.length < 1 || students.length > 50) return json({ error: "Send 1 to 50 students at a time." }, 400);
-    if (!random && (typeof password !== "string" || password.length < 8)) return json({ error: "The starting password must be at least 8 characters." }, 400);
 
     const results: Record<string, unknown>[] = [];
     for (const s of students) {
       const email = String(s.email ?? "").trim().toLowerCase();
       const name = String(s.name ?? "").trim();
       if (!/^[^@\s]+@latterup\.org$/.test(email)) { results.push({ email, status: "skipped", note: "not an @latterup.org address" }); continue; }
-      const pw = random ? randomPw() : password;
       const attrs = {
-        password: pw,
+        password: randomPw(),
         email_confirm: true,
-        user_metadata: { must_change_password: true },
-        app_metadata: { must_change_password: true, ...(name ? { full_name: name } : {}) },
+        ...(name ? { app_metadata: { full_name: name } } : {}),
       };
       const { error } = await admin.auth.admin.createUser({ email, ...attrs });
-      if (!error) { results.push({ email, name, status: "created", password: pw }); continue; }
+      if (!error) { results.push({ email, name, status: "created" }); continue; }
 
       if (/already|exists|registered/i.test(error.message)) {
-        if (!reset) { results.push({ email, status: "exists", note: "already has an account (left alone)" }); continue; }
-        let existing: (typeof user) | undefined;
-        for (let p = 1; !existing; p++) {
-          const { data } = await admin.auth.admin.listUsers({ page: p, perPage: 200 });
-          existing = data?.users.find((u) => u.email?.toLowerCase() === email);
-          if (!data || data.users.length < 200) break;
-        }
-        if (existing) {
-          const r = await admin.auth.admin.updateUserById(existing.id, {
-            ...attrs,
-            app_metadata: { ...existing.app_metadata, ...attrs.app_metadata },
-          });
-          results.push(r.error ? { email, status: "failed", note: r.error.message } : { email, name, status: "reset", password: pw });
-          continue;
-        }
+        results.push({ email, status: "exists", note: "already has an account (left alone)" });
+        continue;
       }
       results.push({ email, status: "failed", note: error.message });
     }

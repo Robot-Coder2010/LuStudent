@@ -391,11 +391,8 @@ function importUI() {
   app.innerHTML = tabs() + `<form id="imp"><h3>Import students</h3>
   <label>Student list <small>One per line: email, name (a header row is fine). Or choose a CSV file below.</small><textarea name="list" rows="8" placeholder="jane.doe@latterup.org, Jane Doe"></textarea></label>
   <label>CSV file (optional)<input type="file" name="csv" accept=".csv,.txt"></label>
-  <label><span><input type="radio" name="m" value="same"> Same starting password for everyone</span><input name="pw" placeholder="At least 8 characters"></label>
-  <label><span><input type="radio" name="m" value="random" checked> A different random password for each student (you'll download the list)</span></label>
-  <label><span><input type="checkbox" name="reset"> Also reset the password of students who already have an account</span></label>
-  <small>Students are asked to choose their own password the first time they sign in. Existing accounts are left alone unless you tick the box above.</small>
-  <div><button class="auth-btn" type="submit">Create accounts</button></div><div id="res"></div></form>`;
+  <small>Students sign in with their @latterup.org Google account. Existing accounts are left unchanged.</small>
+  <div><button class="auth-btn" type="submit">Prepare accounts</button></div><div id="res"></div></form>`;
   wire();
   const f = document.getElementById("imp").elements, res = document.getElementById("res");
   f.csv.onchange = async () => { f.list.value = await f.csv.files[0].text(); };
@@ -403,25 +400,16 @@ function importUI() {
   document.getElementById("imp").onsubmit = async e => {
     e.preventDefault();
     const students = f.list.value.split(/\r?\n/).filter(l => l.trim()).map(cells).filter(c => c[0].toLowerCase() !== "email").map(c => ({ email: c[0], name: c[1] || "" }));
-    const random = f.m.value === "random";
     if (!students.length) return (res.textContent = "Add at least one student.");
-    if (!random && f.pw.value.length < 8) return (res.textContent = "The starting password needs at least 8 characters.");
     const all = []; res.textContent = "Working…";
     for (let i = 0; i < students.length; i += 20) {
-      const { data, error } = await sb.functions.invoke("import-students", { body: { students: students.slice(i, i + 20), password: f.pw.value, random, reset: f.reset.checked } });
+      const { data, error } = await sb.functions.invoke("import-students", { body: { students: students.slice(i, i + 20) } });
       if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch {} return (res.innerHTML = "<p class='auth-error'>" + esc(m) + "</p>"); }
       all.push(...data.results); res.textContent = `Working… ${Math.min(i + 20, students.length)} of ${students.length}`;
     }
     const n = s => all.filter(r => r.status === s).length;
-    res.innerHTML = `<p><b>Done.</b> Created ${n("created")}, reset ${n("reset")}, left alone ${n("exists")}, skipped ${n("skipped")}, failed ${n("failed")}.</p>` +
+    res.innerHTML = `<p><b>Done.</b> Created ${n("created")}, left alone ${n("exists")}, skipped ${n("skipped")}, failed ${n("failed")}.</p>` +
       all.filter(r => r.note).map(r => `<small>${esc(r.email)}: ${esc(r.note)}</small><br>`).join("");
-    const pw = all.filter(r => r.password);
-    if (random && pw.length) {
-      const csvCell = value => `"${String(value ?? "").replace(/"/g, '""').replace(/^[=+\-@]/, "'$&")}"`;
-      const csv = "email,name,password\n" + pw.map(r => [r.email, r.name, r.password].map(csvCell).join(",")).join("\n");
-      const a = document.createElement("a"); a.className = "auth-btn"; a.textContent = "Download passwords (then delete the file after handing them out)";
-      a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = "student-passwords.csv"; res.appendChild(a);
-    }
   };
 }
 async function peopleUI(table, heading, blurb, addLabel, btnText) {
