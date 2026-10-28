@@ -748,3 +748,45 @@ main.adm[style*="max-width:460px"] .auth-btn { border-radius: 10px; }
   padding-top: clamp(24px, 4vw, 52px) !important;
 }
 .photo-round-badge + h2 { margin-top: .9rem !important; }
+
+/* Give the home-page previews the same accented cards as their archive pages. */
+.home-page #videos-preview-list {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 900px;
+}
+.home-page #announcements-preview-list .announcement-item {
+  background: var(--surface) !important;
+  border: 1px solid var(--stone-line) !important;
+  border-left: 5px solid var(--gold) !important;
+  border-radius: 12px !important;
+  padding: 0 !important;
+  margin: 0 0 16px;
+  box-shadow: 0 10px 26px -20px rgba(23, 38, 79, .45) !important;
+  transition: border-color .15s, box-shadow .15s, background .15s;
+}
+.home-page #announcements-preview-list .announcement-item:hover,
+.home-page #announcements-preview-list .announcement-item[open] {
+  border-color: var(--gold-deep) !important;
+  box-shadow: 0 14px 30px -18px rgba(23, 38, 79, .5) !important;
+}
+.home-page #announcements-preview-list .announcement-item[open] {
+  background: color-mix(in srgb, var(--tint) 35%, var(--surface)) !important;
+}
+.home-page #announcements-preview-list .announcement-question {
+  padding: 22px 72px 22px 24px !important;
+}
+.home-page #videos-preview-list .video-card {
+  background: var(--surface) !important;
+  border: 2px solid var(--gold) !important;
+  border-radius: 14px !important;
+  overflow: hidden !important;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 0 14px color-mix(in srgb, var(--gold) 32%, transparent), 0 12px 28px -22px rgba(23, 38, 79, .5) !important;
+  transition: border-color .15s, box-shadow .15s;
+}
+.home-page #videos-preview-list .video-card:hover {
+  border-color: var(--gold-deep) !important;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--gold) 45%, transparent), 0 16px 34px -20px rgba(23, 38, 79, .55) !important;
+}
+.home-page #videos-preview-list .video-card-body { padding: 18px 22px 24px !important; }
