@@ -67,6 +67,13 @@
   }
   else {
     const u = session.user, name = u.app_metadata?.full_name || u.email, adm = await (async () => { const r = await sb.rpc("my_role"); return r.data || ((await sb.rpc("is_admin")).data ? "admin" : "student"); })();
+    if (adm === "admin") {
+      const link = document.createElement("a");
+      link.href = "admin.html";
+      link.textContent = "Admin";
+      if (page === "admin.html") link.setAttribute("aria-current", "page");
+      $("nav").appendChild(link);
+    }
     if (adm === "admin" || adm === "leader") {
       const { data: canViewLeadershipHub, error: leadershipHubError } = await sb.rpc("can_view_leadership_hub");
       if (leadershipHubError) console.error("Student Leadership tab access could not be checked:", leadershipHubError);

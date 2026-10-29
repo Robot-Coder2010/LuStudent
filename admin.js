@@ -519,7 +519,7 @@ async function studentLeadershipUI() {
     if (!roleIdsByMember.has(row.member_email)) roleIdsByMember.set(row.member_email, []);
     roleIdsByMember.get(row.member_email).push(row.role_id);
   });
-  app.innerHTML = tabs() + `<h2>Student Leadership management</h2>
+  app.innerHTML = tabs() + `<h2>Hub settings</h2>
     <form id="lh-settings" class="admin-schedule">
       <h3>Hub visibility and weekly roles</h3>
       <label>Student Leadership tab access
@@ -537,10 +537,9 @@ async function studentLeadershipUI() {
     <details class="leadership-admin-section leadership-admin-collapsible" ${leadershipAssignmentsOpen ? "open" : ""}>
       <summary>Weekly role chart assignments</summary>
       <p>Choose the roles each member can rotate through and who is included in the chart. These controls do not remove anyone from Student Leadership.</p>
-      <p class="leadership-admin-role-order"><b>Current chart order:</b> ${roles.map((role, index) => `${index + 1}. ${esc(role.name)}`).join(" · ")}</p>
       <section class="leadership-role-management">
         <h4>Chart roles</h4>
-        <p>Add roles, edit their names, and set their order in the weekly chart.</p>
+        <p>Manage role names and chart order.</p>
         <div id="lh-role-list">${roles.map((role, index) => `<div class="leadership-role-admin-row" data-role="${role.id}">
           <label>Role name<input data-role-name maxlength="80" value="${esc(role.name)}"></label>
           <label>Chart order<input data-role-order type="number" min="1" step="1" value="${index + 1}"></label>

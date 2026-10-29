@@ -45,7 +45,7 @@
     const assignments = currentAssignments(members, roleNames, rotationWeekIndex(weekday), excludedEmails);
     host.innerHTML = `<section class="leadership-section leadership-chart-section" aria-labelledby="weekly-chart-title">
       <div class="leadership-section-heading">
-        <div><p class="eyebrow">This week's assignments</p><h2 id="weekly-chart-title">Weekly role chart</h2></div>
+        <div><h2 id="weekly-chart-title">Weekly assignments</h2></div>
         <span class="leadership-rotation-badge">${LUIcon("clock", 17)} Rotates ${weekdayNames[weekday]}</span>
       </div>
       <div class="leadership-chart" aria-label="Weekly Student Leadership roles">
@@ -60,7 +60,6 @@
               : ""}</div>
         </article>`).join("")}
       </div>
-      <p class="leadership-chart-note">The chart updates automatically every ${weekdayNames[weekday]} (UTC).</p>
     </section>`;
   }
 
