@@ -611,7 +611,7 @@ async function studentLeadershipUI() {
       </section>
       <section class="leadership-role-management">
         <h4>Add a Student Leadership member</h4>
-        <p>Add their @latterup.org email before their first sign-in. This adds them to the roster, but does not create a Google or portal account.</p>
+        <p>Add their @latterup.org email before their first sign-in. Student Leadership access is assigned by email, so no profile is needed; you can set their chart roles below and they can sign in later with the same address.</p>
         <form id="lh-add-member-email"><label>Email address<input name="email" type="email" placeholder="name@latterup.org" required></label>
           <button class="auth-btn" type="submit">Add to Student Leadership</button><small id="lh-add-member-message"></small>
         </form>

@@ -95,29 +95,74 @@
     });
     const host=document.getElementById("portal-announcement-banner");
     if(host&&banner.enabled&&banner.text){
-      let profileKey="visitor";
+      let userId=null, dismissal=null, dismissalLoadError=null;
       if(!window.LU_LOCAL_PREVIEW){
         const {data:{session},error:sessionError}=await sb.auth.getSession();
-        if(sessionError) console.error("Banner dismissal profile could not be checked:",sessionError);
-        profileKey=session?.user?.id||profileKey;
+        if(sessionError){
+          dismissalLoadError=sessionError;
+          console.error("Banner dismissal profile could not be checked:",sessionError);
+        }
+        userId=session?.user?.id||null;
       }
-      const storageKey=`lu-banner-dismissal:${profileKey}`;
+      const storageKey=`lu-banner-dismissal:${userId||"visitor"}`;
       const fingerprint=JSON.stringify([banner.enabled,banner.text,banner.link_text,banner.link_url,banner.updated_at||""]);
-      let dismissal=null;
-      try { dismissal=JSON.parse(localStorage.getItem(storageKey)||"null"); }
-      catch(error) { console.warn("Banner dismissal could not be read:",error); }
-      const dismissed=dismissal?.fingerprint===fingerprint&&Number(dismissal.until)>Date.now();
+      if(userId){
+        const {data,error}=await sb.from("portal_banner_dismissals")
+          .select("fingerprint,dismissed_until").eq("user_id",userId).maybeSingle();
+        if(error){
+          dismissalLoadError=error;
+          console.error("Banner dismissal could not be loaded:",error);
+        }else if(data){
+          dismissal={fingerprint:data.fingerprint,until:new Date(data.dismissed_until).getTime()};
+        }
+      }else{
+        try { dismissal=JSON.parse(localStorage.getItem(storageKey)||"null"); }
+        catch(error) { console.warn("Banner dismissal could not be read:",error); }
+      }
+      const dismissed=!dismissalLoadError&&dismissal?.fingerprint===fingerprint&&Number(dismissal.until)>Date.now();
       host.innerHTML=`<div class="wrap portal-announcement-inner"><span>${esc(banner.text)}</span>${banner.link_text&&banner.link_url?`<a href="${esc(safeUrl(banner.link_url))}" ${/^https?:/i.test(banner.link_url)?'target="_blank" rel="noopener"':''}>${esc(banner.link_text)} ↗</a>`:""}<button class="portal-banner-dismiss" type="button" aria-label="Dismiss this banner until 6 AM tomorrow">Dismiss for today</button></div>`;
       host.hidden=dismissed;
       const dismissButton=host.querySelector(".portal-banner-dismiss");
       dismissButton.onclick=()=>{
+        if(dismissalLoadError){
+          alert("Your banner dismissal could not be checked. Please refresh and try again.");
+          return;
+        }
         const until=new Date();
         until.setDate(until.getDate()+1);
         until.setHours(6,0,0,0);
-        try { localStorage.setItem(storageKey,JSON.stringify({fingerprint,until:until.getTime()})); }
-        catch(error) { console.warn("Banner dismissal could not be saved:",error); }
-        host.hidden=true;
-        setTimeout(()=>{host.hidden=false;},Math.max(0,until.getTime()-Date.now()));
+        const resume=()=>{
+          host.hidden=true;
+          setTimeout(()=>{host.hidden=false;},Math.max(0,until.getTime()-Date.now()));
+        };
+        if(userId){
+          dismissButton.disabled=true;
+          sb.from("portal_banner_dismissals").upsert({
+            user_id:userId,
+            fingerprint,
+            dismissed_until:until.toISOString()
+          },{onConflict:"user_id"}).then(({error})=>{
+            if(error){
+              console.error("Banner dismissal could not be saved:",error);
+              alert("The banner could not be dismissed. Please try again.");
+              dismissButton.disabled=false;
+              return;
+            }
+            resume();
+          }).catch(error=>{
+            console.error("Banner dismissal could not be saved:",error);
+            alert("The banner could not be dismissed. Please try again.");
+            dismissButton.disabled=false;
+          });
+        }else{
+          try {
+            localStorage.setItem(storageKey,JSON.stringify({fingerprint,until:until.getTime()}));
+            resume();
+          }catch(error){
+            console.error("Banner dismissal could not be saved:",error);
+            alert("The banner could not be dismissed. Please check your browser storage settings and try again.");
+          }
+        }
       };
     } else if(host) host.hidden=true;
   }
