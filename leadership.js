@@ -26,23 +26,32 @@
     return new Date(todayUtc - daysSinceRotation * 86400000).toISOString().slice(0, 10);
   }
 
-  function currentAssignments(members, roleNames, weekIndex, excludedEmails) {
+  function currentAssignments(members, roles, weekIndex, excludedEmails, overrides) {
     const assigned = new Set();
-    return roleNames.map((role, roleIndex) => {
+    return roles.map((role, roleIndex) => {
+      const pinnedEmail = overrides.get(role.id);
+      if (pinnedEmail) {
+        const member = members.find(candidate => candidate.email.toLowerCase() === pinnedEmail);
+        if (member) {
+          assigned.add(member.email.toLowerCase());
+          return { role: role.name, member };
+        }
+      }
       const candidates = members.filter(member =>
-        member.in_cycle && !excludedEmails.has(member.email.toLowerCase()) && member.roles.includes(role)
+        member.in_cycle && !excludedEmails.has(member.email.toLowerCase())
+        && member.roles.includes(role.name)
       );
-      if (!candidates.length) return { role, member: null };
+      if (!candidates.length) return { role: role.name, member: null };
       const start = (weekIndex + roleIndex) % candidates.length;
       const rotated = candidates.map((_, index) => candidates[(start + index) % candidates.length]);
-      const member = rotated.find(candidate => !assigned.has(candidate.email)) || candidates[start];
-      assigned.add(member.email);
-      return { role, member };
+      const member = rotated.find(candidate => !assigned.has(candidate.email.toLowerCase())) || candidates[start];
+      assigned.add(member.email.toLowerCase());
+      return { role: role.name, member };
     });
   }
 
-  function renderChart(host, members, roleNames, weekday, excludedEmails, userEmail, skipRequest) {
-    const assignments = currentAssignments(members, roleNames, rotationWeekIndex(weekday), excludedEmails);
+  function renderChart(host, members, roles, weekday, excludedEmails, userEmail, skipRequest, overrides) {
+    const assignments = currentAssignments(members, roles, rotationWeekIndex(weekday), excludedEmails, overrides);
     host.innerHTML = `<section class="leadership-section leadership-chart-section" aria-labelledby="weekly-chart-title">
       <div class="leadership-section-heading">
         <div><h2 id="weekly-chart-title">Weekly assignments</h2></div>
@@ -88,15 +97,16 @@
 
     const weekStart = rotationWeekStart(settingsResult.data.rotation_weekday);
     const userEmail = (session.user.email || "").toLowerCase();
-    const [membersResult, rolesResult, assignmentsResult, exclusionsResult, skipRequestResult] = await Promise.all([
+    const [membersResult, rolesResult, assignmentsResult, exclusionsResult, skipRequestResult, overridesResult] = await Promise.all([
       sb.from("leadership_chart_members").select("email,display_name,in_cycle,sort_order").order("sort_order").order("display_name"),
       sb.from("leadership_chart_roles").select("id,name,sort_order").order("sort_order").order("name"),
       sb.from("leadership_member_roles").select("member_email,role_id"),
       sb.from("leadership_rotation_exclusions").select("member_email").eq("week_start", weekStart),
       sb.from("leadership_rotation_skip_requests").select("status").eq("week_start", weekStart).eq("member_email", userEmail).maybeSingle(),
+      sb.from("leadership_role_overrides").select("role_id,member_email").eq("week_start", weekStart),
     ]);
-    const failed = [membersResult, rolesResult, assignmentsResult, exclusionsResult, skipRequestResult].find(result => result.error);
-    if (failed) return showError(app, `The Student Leadership hub could not load: ${failed.error.message}. Ask an admin to run update-10-student-leadership-hub.sql.`);
+    const failed = [membersResult, rolesResult, assignmentsResult, exclusionsResult, skipRequestResult, overridesResult].find(result => result.error);
+    if (failed) return showError(app, `The Student Leadership hub could not load: ${failed.error.message}. Ask an admin to run update-10-student-leadership-hub.sql and update-12-leadership-role-overrides-and-photo-alerts.sql.`);
     const roleNames = new Map(rolesResult.data.map(item => [item.id, item.name]));
     const assignments = new Map();
     assignmentsResult.data.forEach(item => {
@@ -105,6 +115,7 @@
       if (name) assignments.get(item.member_email).push(name);
     });
     const members = membersResult.data.map(member => ({ ...member, roles: assignments.get(member.email) || [] }));
+    const roleOverrides = new Map(overridesResult.data.map(item => [item.role_id, item.member_email.toLowerCase()]));
 
     app.innerHTML = `<div id="weekly-role-chart"></div>
       <section class="leadership-section leadership-report-section" id="report-section">
@@ -123,8 +134,8 @@
         <div id="leadership-prizes" class="leadership-prize-grid"></div>
         <div class="leadership-claims"><h3>My prize requests</h3><div id="my-prize-claims"></div></div></section>`;
     const excludedEmails = new Set(exclusionsResult.data.map(item => item.member_email.toLowerCase()));
-    renderChart(document.getElementById("weekly-role-chart"), members, rolesResult.data.map(item => item.name),
-      settingsResult.data.rotation_weekday, excludedEmails, userEmail, skipRequestResult.data);
+    renderChart(document.getElementById("weekly-role-chart"), members, rolesResult.data,
+      settingsResult.data.rotation_weekday, excludedEmails, userEmail, skipRequestResult.data, roleOverrides);
     document.querySelectorAll("[data-request-week-off]").forEach(button => button.onclick = async () => {
       const reason = prompt("Please explain why you need to be removed from this week's Student Leadership rotation (up to 500 characters).");
       if (reason === null) return;

@@ -131,6 +131,7 @@ async function listUI(table, host) {
   LT = table; const t = T[table];
   const { data, error: listError } = await sb.from(table).select("*").order(t.order, { ascending: !!t.asc });
   const rows = data ?? [];
+  const { data: { session } } = await sb.auth.getSession();
   let scheduleBlock = "";
   if (table === "themes" && ROLE === "admin") {
     const { data: st, error: settingsError } = await sb.from("settings").select("*").eq("id", 1).single();
@@ -144,9 +145,11 @@ async function listUI(table, host) {
       <div><button class="auth-btn" type="submit">Save schedule settings</button></div><small id="schedule-msg"></small></form>`;
   }
   host.innerHTML = (host === app ? tabs() : "") + (listError ? `<p class="auth-error">Could not load ${esc(t.label.toLowerCase())}: ${esc(listError.message)}</p>` : "") + `<button class="auth-btn" id="new">+ Add new</button><div id="list">` +
-    rows.map(r => `<div class="row"><span>${esc(r[t.title])} <small>${esc(r.date || (r.starts_at ? new Date(r.starts_at).toLocaleString() : ""))}</small>${r.publish_at && new Date(r.publish_at) > new Date() ? ` <span class="sched-badge">Scheduled for ${esc(new Date(r.publish_at).toLocaleString())}</span>` : ""}</span><span>${table === "themes" ? `<button class="auth-btn alt" data-ph="${r.id}">Photos</button> ` : ""}<button class="auth-btn alt" data-e="${r.id}">Edit</button> <button class="auth-btn alt" data-d="${r.id}">Delete</button></span></div>`).join("") + "</div><div id=\"form\"></div>" + (table === "themes" ? '<div id="photos-section"></div>' : "") + scheduleBlock;
+    rows.map(r => {
+      const canManage = ROLE === "admin" || (table === "announcements" && ROLE === "leader" && r.created_by === session?.user?.id);
+      return `<div class="row"><span>${esc(r[t.title])} <small>${esc(r.date || (r.starts_at ? new Date(r.starts_at).toLocaleString() : ""))}</small>${r.publish_at && new Date(r.publish_at) > new Date() ? ` <span class="sched-badge">Scheduled for ${esc(new Date(r.publish_at).toLocaleString())}</span>` : ""}</span><span>${table === "themes" ? `<button class="auth-btn alt" data-ph="${r.id}">Photos</button> ` : ""}${canManage ? `<button class="auth-btn alt" data-e="${r.id}">Edit</button> <button class="auth-btn alt" data-d="${r.id}">Delete</button>` : ""}</span></div>`;
+    }).join("") + "</div><div id=\"form\"></div>" + (table === "themes" ? '<div id="photos-section"></div>' : "") + scheduleBlock;
   if (host === app) wire();
-  if (ROLE !== "admin") host.querySelectorAll("[data-e],[data-d]").forEach(b => b.remove());
   const scheduleForm = document.getElementById("theme-schedule");
   const pl = document.getElementById("pub-link"); if (pl) pl.textContent = new URL("share-photos.html", location.href).href;
   if (scheduleForm) scheduleForm.onsubmit = async e => {
@@ -163,6 +166,11 @@ async function listUI(table, host) {
     if (!confirm("Delete this permanently?")) return;
     const { data, error } = await sb.from(table).delete().eq("id", b.dataset.d).select("id").maybeSingle();
     if (error || !data) return alert(error?.message || "The item was not deleted.");
+    const deletedRow = rows.find(row => row.id === b.dataset.d);
+    if (table === "announcements" && deletedRow?.pdf_path) {
+      const { error: fileError } = await sb.storage.from("media").remove([deletedRow.pdf_path]);
+      if (fileError) return alert(`Announcement deleted, but its flyer could not be removed: ${fileError.message}`);
+    }
     show();
   });
 }
@@ -193,7 +201,12 @@ async function form(row) {
       const inp = e.target.elements[k];
       if (type === "file") {
         const f = inp.files[0]; if (!f) continue;
-        const path = crypto.randomUUID() + "." + (f.name.split(".").pop() || "bin").toLowerCase();
+        let path = crypto.randomUUID() + "." + (f.name.split(".").pop() || "bin").toLowerCase();
+        if (LT === "announcements" && ROLE === "leader") {
+          const { data: { session }, error: sessionError } = await sb.auth.getSession();
+          if (sessionError || !session) return (msg.textContent = `Could not verify the signed-in member: ${sessionError?.message || "no active session"}`);
+          path = `${session.user.id}/${path}`;
+        }
         const up = await sb.storage.from("media").upload(path, f);
         if (up.error) return (msg.textContent = "Upload failed: " + up.error.message);
         out[k] = path;
@@ -503,17 +516,19 @@ async function studentLeadershipUI() {
   }
   const settings = settingsResult.data, members = membersResult.data, roles = rolesResult.data;
   const weekStart = rotationWeekStart(settings.rotation_weekday);
-  const [exclusionsResult, skipRequestsResult] = await Promise.all([
+  const [exclusionsResult, skipRequestsResult, overridesResult] = await Promise.all([
     sb.from("leadership_rotation_exclusions").select("member_email").eq("week_start", weekStart),
     sb.from("leadership_rotation_skip_requests").select("id,week_start,member_email,reason,created_at").eq("status", "pending").order("week_start").order("created_at"),
+    sb.from("leadership_role_overrides").select("role_id,member_email").eq("week_start", weekStart),
   ]);
-  const rotationFailure = [exclusionsResult, skipRequestsResult].find(result => result.error);
+  const rotationFailure = [exclusionsResult, skipRequestsResult, overridesResult].find(result => result.error);
   if (rotationFailure) {
-    app.innerHTML = tabs() + `<p class="auth-error">Weekly rotation requests could not load: ${esc(rotationFailure.error.message)}. Run the latest update-10-student-leadership-hub.sql in Supabase SQL Editor.</p>`;
+    app.innerHTML = tabs() + `<p class="auth-error">Weekly rotation settings could not load: ${esc(rotationFailure.error.message)}. Run update-12-leadership-role-overrides-and-photo-alerts.sql in Supabase SQL Editor.</p>`;
     wire();
     return;
   }
   const excludedEmails = new Set(exclusionsResult.data.map(item => item.member_email.toLowerCase()));
+  const overridesByRole = new Map(overridesResult.data.map(item => [item.role_id, item.member_email]));
   const roleIdsByMember = new Map();
   assignmentResult.data.forEach(row => {
     if (!roleIdsByMember.has(row.member_email)) roleIdsByMember.set(row.member_email, []);
@@ -551,6 +566,23 @@ async function studentLeadershipUI() {
         <small id="lh-role-order-message"></small>
       </section>
       <button class="auth-btn alt" type="button" id="lh-shuffle-roles">Shuffle member rotation order</button>
+      ${ROLE === "admin" ? `<section class="leadership-role-management">
+        <h4>Assign a role for this week</h4>
+        <p>These assignments override this week's chart only. They do not change anyone's rotation order; clear an assignment to return that role to the rotation.</p>
+        <div id="lh-weekly-role-overrides">${roles.map(role => `<div class="leadership-role-admin-row" data-week-role="${role.id}">
+          <label>${esc(role.name)}<select data-week-member><option value="">Use rotating assignment</option>
+            ${members.map(member => `<option value="${esc(member.email)}" ${overridesByRole.get(role.id) === member.email ? "selected" : ""}>${esc(member.display_name)} (${esc(member.email)})</option>`).join("")}
+          </select></label>
+          <button class="auth-btn alt" type="button" data-save-week-role>Save this week's assignment</button><small data-week-role-message></small>
+        </div>`).join("") || "<p>Add a chart role first.</p>"}</div>
+      </section>
+      <section class="leadership-role-management">
+        <h4>Add a Student Leadership member</h4>
+        <p>Add their @latterup.org email before their first sign-in. This adds them to the roster, but does not create a Google or portal account.</p>
+        <form id="lh-add-member-email"><label>Email address<input name="email" type="email" placeholder="name@latterup.org" required></label>
+          <button class="auth-btn" type="submit">Add to Student Leadership</button><small id="lh-add-member-message"></small>
+        </form>
+      </section>` : ""}
       <div id="lh-member-list">${members.map(member => `<article class="leadership-member-admin" data-member="${esc(member.email)}">
         <label>Display name<input data-display-name maxlength="120" value="${esc(member.display_name)}"></label>
         <label>Rotation order<input data-sort-order type="number" step="1" value="${member.sort_order}"></label>
@@ -577,6 +609,43 @@ async function studentLeadershipUI() {
   wire();
   const assignmentsDetails = document.querySelector(".leadership-admin-collapsible");
   assignmentsDetails.addEventListener("toggle", () => { leadershipAssignmentsOpen = assignmentsDetails.open; });
+  document.querySelectorAll("[data-save-week-role]").forEach(button => button.onclick = async () => {
+    const row = button.closest("[data-week-role]");
+    const message = row.querySelector("[data-week-role-message]");
+    button.disabled = true;
+    const { error } = await sb.rpc("set_leadership_role_override", {
+      p_week_start: weekStart,
+      p_role_id: row.dataset.weekRole,
+      p_member_email: row.querySelector("[data-week-member]").value || null,
+    });
+    if (error) {
+      message.textContent = `Could not save this week's assignment: ${error.message}`;
+      button.disabled = false;
+      return;
+    }
+    leadershipAssignmentsOpen = true;
+    await studentLeadershipUI();
+  });
+  const addMemberEmailForm = document.getElementById("lh-add-member-email");
+  if (addMemberEmailForm) addMemberEmailForm.onsubmit = async event => {
+    event.preventDefault();
+    const email = event.target.elements.email.value.trim().toLowerCase();
+    const message = document.getElementById("lh-add-member-message");
+    const button = event.target.querySelector('[type="submit"]');
+    if (!email.endsWith("@latterup.org")) {
+      message.textContent = "Use an @latterup.org email address.";
+      return;
+    }
+    button.disabled = true;
+    const { error } = await sb.from("leadership").insert({ email });
+    if (error) {
+      message.textContent = `Could not add ${email}: ${error.message}`;
+      button.disabled = false;
+      return;
+    }
+    leadershipAssignmentsOpen = true;
+    await studentLeadershipUI();
+  };
   document.querySelectorAll("[data-toggle-week-exclusion]").forEach(button => button.onclick = async () => {
     const email = button.dataset.toggleWeekExclusion;
     const exclude = button.dataset.excluded !== "true";
@@ -762,9 +831,16 @@ async function paintPrizeClaimQueue(claims) {
 async function alertsUI() {
   const { data: c, error } = await sb.from("notify_config").select("*").eq("id", 1).maybeSingle();
   app.innerHTML = tabs() + `<form id="al" class="admin-schedule"><h3>Email alerts for new photos</h3>
-    <p><small>When students or visitors submit photos, valid @latterup.org addresses in Student Leadership and Admins get one email (at most every 5 minutes) saying how many are waiting. Setup steps are at the top of <b>email-alerts.gs</b>.</small></p>
+    <p><small>When students or visitors submit photos, valid @latterup.org addresses in your selected audience get one email (at most every 5 minutes) saying how many are waiting. Test emails go only to your account. Setup steps are at the top of <b>email-alerts.gs</b>.</small></p>
     ${error ? `<p class="auth-error">${esc(error.message)}, run update-5b-email-alerts.sql first.</p>` : ""}
     <label class="chk"><input type="checkbox" name="enabled" ${c?.enabled ? "checked" : ""}> Send email alerts</label>
+    <label>Photo Challenge notification recipients
+      <select name="photo_alert_audience">
+        <option value="all" ${(c?.photo_alert_audience || "all") === "all" ? "selected" : ""}>Admins and Student Leadership</option>
+        <option value="leaders" ${c?.photo_alert_audience === "leaders" ? "selected" : ""}>Student Leadership only</option>
+        <option value="off" ${c?.photo_alert_audience === "off" ? "selected" : ""}>Turn off Photo Challenge notifications</option>
+      </select>
+    </label>
     <label>Google Apps Script web app URL<input name="url" value="${esc(c?.webhook_url || "")}" placeholder="https://script.google.com/macros/s/…/exec"></label>
     <label>Secret phrase <small>Must match the SECRET you set in the script</small><input name="secret" type="password" value="${esc(c?.secret || "")}" autocomplete="off"></label>
     <label>Your site address <small>Used for the link inside the email</small><input name="site" value="${esc(c?.site_url || location.origin)}"></label>
@@ -772,7 +848,17 @@ async function alertsUI() {
     <small id="al-msg">${c?.last_sent_at ? "Last email requested " + esc(new Date(c.last_sent_at).toLocaleString()) + (c.last_status ? ", Google replied " + c.last_status : "") : ""}</small></form>`;
   wire();
   const f = document.getElementById("al").elements, msg = document.getElementById("al-msg");
-  const save = async () => { const { error } = await sb.from("notify_config").update({ enabled: f.enabled.checked, webhook_url: f.url.value.trim(), secret: f.secret.value, site_url: f.site.value.trim().replace(/\/$/, "") }).eq("id", 1); if (error) msg.textContent = "Error: " + error.message; return !error; };
+  const save = async () => {
+    const { error } = await sb.from("notify_config").update({
+      enabled: f.enabled.checked,
+      photo_alert_audience: f.photo_alert_audience.value,
+      webhook_url: f.url.value.trim(),
+      secret: f.secret.value,
+      site_url: f.site.value.trim().replace(/\/$/, ""),
+    }).eq("id", 1);
+    if (error) msg.textContent = `Error: ${error.message}${error.message.includes("photo_alert_audience") ? " Run update-12-leadership-role-overrides-and-photo-alerts.sql in Supabase." : ""}`;
+    return !error;
+  };
   const checkStatus = async () => {
     const { data, error } = await sb.rpc("check_email_alert_status");
     if (error) {
