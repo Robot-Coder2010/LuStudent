@@ -279,24 +279,57 @@ async function portalLayoutUI(host = app) {
   }
   const banner = { ...DEFAULT_PORTAL_BANNER, ...(st?.portal_banner || {}) };
   let tiles = Array.isArray(st?.portal_tiles) && st.portal_tiles.length ? st.portal_tiles : DEFAULT_PORTAL_TILES;
-  host.innerHTML = (host === app ? tabs() : "") + `<section class="portal-admin-section"><h3>Announcement banner</h3><p>Show a message directly below the navigation bar. Link to another page on this site (for example <code>photos.html</code>) or paste a full external URL.</p>
+  host.innerHTML = (host === app ? tabs() : "") + `<section class="portal-admin-section"><h3>Announcement banner</h3><p>Show a message directly below the navigation bar. Link to another page on this site (for example <code>photos.html</code>) or paste a full external URL. People can dismiss the banner until 6 AM the next morning; changing the message or link shows it again.</p>
     <form id="portal-banner-form"><label class="inline-check"><input name="enabled" type="checkbox" ${banner.enabled ? "checked" : ""}> Show banner on the main page</label>
     <label>Announcement text<input name="text" maxlength="240" value="${esc(banner.text)}" placeholder="e.g. Photo submissions close Friday!"></label>
     <label>Link text (optional)<input name="link_text" maxlength="60" value="${esc(banner.link_text)}" placeholder="Learn more"></label>
     <label>Link destination (optional)<input name="link_url" value="${esc(banner.link_url)}" placeholder="photos.html or https://example.com"></label>
     <div><button class="auth-btn" type="submit">Save banner</button></div><small id="banner-msg"></small></form></section>
-    <section class="portal-admin-section"><h3>Main page tiles</h3><p>Add, remove, or edit the quick-link tiles shown on the home page. Keep destinations to a page on this site or a full URL. On wide screens the tiles use a four-column grid and adapt to smaller screens.</p>
-    <div id="portal-tile-editor">${tiles.map((t,i)=>portalTileForm(t,i)).join("")}</div>
-    <div class="portal-admin-actions"><button class="auth-btn alt" type="button" id="add-portal-tile">+ Add tile</button> <button class="auth-btn" type="button" id="save-portal-tiles">Save tiles</button></div><small id="tiles-msg"></small></section>`;
+    <details class="portal-admin-section portal-tiles-admin"><summary><h3>Main page tiles</h3><span>Show or hide tile settings</span></summary>
+    <p>Add, remove, edit, and drag tiles to change the order of the home page quick links. Keep destinations to a page on this site or a full URL.</p>
+    <div id="portal-tile-editor" aria-label="Drag tiles to reorder">${tiles.map((t,i)=>portalTileForm(t,i)).join("")}</div>
+    <div class="portal-admin-actions"><button class="auth-btn alt" type="button" id="add-portal-tile">+ Add tile</button> <button class="auth-btn" type="button" id="save-portal-tiles">Save tiles</button></div><small id="tiles-msg"></small></details>`;
   if (host === app) wire();
   const bf = document.getElementById("portal-banner-form");
-  bf.onsubmit = async e => { e.preventDefault(); const f=e.target.elements; const out={enabled:f.enabled.checked,text:f.text.value.trim(),link_text:f.link_text.value.trim(),link_url:f.link_url.value.trim()}; const {error}=await sb.from("settings").update({portal_banner:out}).eq("id",1); document.getElementById("banner-msg").textContent=error?"Error: "+error.message:"Saved"; };
+  bf.onsubmit = async e => { e.preventDefault(); const f=e.target.elements; const out={enabled:f.enabled.checked,text:f.text.value.trim(),link_text:f.link_text.value.trim(),link_url:f.link_url.value.trim(),updated_at:new Date().toISOString()}; const {error}=await sb.from("settings").update({portal_banner:out}).eq("id",1); document.getElementById("banner-msg").textContent=error?"Error: "+error.message:"Saved"; };
   const editor=document.getElementById("portal-tile-editor");
-  document.getElementById("add-portal-tile").onclick=()=>{ const i=editor.querySelectorAll(".portal-tile-edit").length; editor.insertAdjacentHTML("beforeend",portalTileForm({title:"New tile",description:"",url:"index.html",cta:"Open",icon:"link"},i)); };
-  editor.addEventListener("click",e=>{const b=e.target.closest("[data-remove-tile]");if(b){b.closest(".portal-tile-edit").remove();}});
+  const updateTileLabels=()=>editor.querySelectorAll(".portal-tile-edit").forEach((row,index)=>{row.dataset.tileIndex=index;row.querySelector("[data-tile-number]").textContent=`Tile ${index+1}`;});
+  document.getElementById("add-portal-tile").onclick=()=>{ const i=editor.querySelectorAll(".portal-tile-edit").length; editor.insertAdjacentHTML("beforeend",portalTileForm({title:"New tile",description:"",url:"index.html",cta:"Open",icon:"link"},i)); updateTileLabels(); };
+  editor.addEventListener("click",e=>{const b=e.target.closest("[data-remove-tile]");if(b){b.closest(".portal-tile-edit").remove();updateTileLabels();}});
+  let draggedTile=null;
+  editor.addEventListener("dragstart",event=>{
+    const row=event.target.closest(".portal-tile-edit");
+    if(!row)return;
+    draggedTile=row;
+    row.classList.add("is-dragging");
+    event.dataTransfer.effectAllowed="move";
+    event.dataTransfer.setData("text/plain",row.dataset.tileIndex||"tile");
+  });
+  editor.addEventListener("dragend",event=>{
+    event.target.closest(".portal-tile-edit")?.classList.remove("is-dragging");
+    editor.querySelectorAll(".portal-tile-edit").forEach(row=>row.classList.remove("drop-target"));
+    draggedTile=null;
+  });
+  editor.addEventListener("dragover",event=>{
+    const target=event.target.closest(".portal-tile-edit");
+    if(!draggedTile||!target||target===draggedTile)return;
+    event.preventDefault();
+    target.classList.add("drop-target");
+    event.dataTransfer.dropEffect="move";
+  });
+  editor.addEventListener("dragleave",event=>event.target.closest(".portal-tile-edit")?.classList.remove("drop-target"));
+  editor.addEventListener("drop",event=>{
+    const target=event.target.closest(".portal-tile-edit");
+    if(!draggedTile||!target||target===draggedTile)return;
+    event.preventDefault();
+    target.classList.remove("drop-target");
+    const rect=target.getBoundingClientRect();
+    editor.insertBefore(draggedTile,event.clientY<rect.top+rect.height/2?target:target.nextSibling);
+    updateTileLabels();
+  });
   document.getElementById("save-portal-tiles").onclick=async()=>{const msg=document.getElementById("tiles-msg"); const rows=[...editor.querySelectorAll(".portal-tile-edit")]; const out=[]; for(const row of rows){const val=n=>row.querySelector(`[name="${n}"]`).value.trim();const title=val("title"),url=val("url");if(!title||!url){msg.textContent="Each tile needs a title and destination URL.";return;}out.push({title,description:val("description"),url,cta:val("cta")||"Open",icon:val("icon")||"link",secondary_text:val("secondary_text"),secondary_url:val("secondary_url")});} msg.textContent="Saving…";const {error}=await sb.from("settings").update({portal_tiles:out}).eq("id",1);msg.textContent=error?"Error: "+error.message:"Saved";};
 }
-function portalTileForm(t,i){return `<div class="portal-tile-edit"><div class="portal-tile-edit-head"><strong>Tile ${i+1}</strong><button type="button" class="auth-btn alt" data-remove-tile>Remove</button></div><div class="portal-tile-fields">
+function portalTileForm(t,i){return `<div class="portal-tile-edit" data-tile-index="${i}" draggable="true"><div class="portal-tile-edit-head"><span class="portal-tile-drag-handle" aria-hidden="true">Drag to reorder</span><strong data-tile-number>Tile ${i+1}</strong><button type="button" class="auth-btn alt" data-remove-tile>Remove</button></div><div class="portal-tile-fields">
 <label>Title<input name="title" value="${esc(t.title||"")}" required></label><label>Icon<select name="icon">${["calendar","drive","chat","email","classroom","compass","document","link","photo","video"].map(v=>`<option value="${v}" ${t.icon===v?"selected":""}>${v}</option>`).join("")}</select></label>
 <label class="wide">Description<input name="description" value="${esc(t.description||"")}"></label><label>Destination URL<input name="url" value="${esc(t.url||"")}" placeholder="photos.html or https://…" required></label><label>Link label<input name="cta" value="${esc(t.cta||"Open")}"></label>
 <label>Secondary link text (optional)<input name="secondary_text" value="${esc(t.secondary_text||"")}"></label><label>Secondary link destination (optional)<input name="secondary_url" value="${esc(t.secondary_url||"")}"></label></div></div>`;}
@@ -594,8 +627,10 @@ async function studentLeadershipUI() {
         <button class="auth-btn" type="button" data-save-member>Save member</button><small data-member-message></small>
       </article>`).join("") || "<p>No Student Leadership members have been added yet.</p>"}</div>
     </details>
-    ${ROLE === "admin" ? `<section class="leadership-admin-section"><h3>Requests to skip this week's rotation</h3><div id="lh-rotation-skip-queue"></div></section>` : ""}
-    <section class="leadership-admin-section"><h3>Chat reports awaiting approval</h3><div id="lh-report-queue"></div></section>
+    <div class="leadership-admin-review-grid">
+      ${ROLE === "admin" ? `<section class="leadership-admin-section"><h3>Requests to skip this week's rotation</h3><div id="lh-rotation-skip-queue"></div></section>` : ""}
+      <section class="leadership-admin-section"><h3>Chat reports awaiting approval</h3><p>These reports help Student Leadership members engage with the student body and help everyone feel included. Review a screenshot of a conversation and approve it to award points.</p><div id="lh-report-queue"></div></section>
+    </div>
     <section class="leadership-admin-section"><h3>Prize catalog</h3>
       <form id="lh-add-prize"><label>Prize name<input name="name" maxlength="120" required></label><label>Description<textarea name="description" rows="2"></textarea></label><label>Points required<input name="points_cost" type="number" min="1" max="100000" required></label><button class="auth-btn" type="submit">Add prize</button><small id="lh-prize-message"></small></form>
       <div id="lh-prize-list"></div>
@@ -605,7 +640,17 @@ async function studentLeadershipUI() {
       <h3>Chat report points</h3>
       <label>Points for each approved chat report<input name="approval_points" type="number" min="0" max="10000" value="${settings.approval_points}" required></label>
       <button class="auth-btn" type="submit">Save points</button><small id="lh-points-message"></small>
-    </form>`;
+    </form>
+    ${ROLE === "admin" ? `<form id="lh-bonus-points" class="leadership-admin-section">
+      <h3>Give bonus prize points</h3>
+      <p>Add extra points to a Student Leadership member's prize balance. Include a reason so the award is documented.</p>
+      <label>Student Leadership member<select name="member_email" required>
+        <option value="">Choose a member</option>${members.map(member => `<option value="${esc(member.email)}">${esc(member.display_name)} (${esc(member.email)})</option>`).join("")}
+      </select></label>
+      <label>Bonus points<input name="points" type="number" min="1" max="10000" step="1" required></label>
+      <label>Reason<input name="reason" maxlength="300" required></label>
+      <button class="auth-btn" type="submit">Award bonus points</button><small id="lh-bonus-points-message"></small>
+    </form>` : ""}`;
   wire();
   const assignmentsDetails = document.querySelector(".leadership-admin-collapsible");
   assignmentsDetails.addEventListener("toggle", () => { leadershipAssignmentsOpen = assignmentsDetails.open; });
@@ -724,6 +769,26 @@ async function studentLeadershipUI() {
       approval_points: Number(form.approval_points.value),
     }).eq("id", 1);
     message.textContent = error ? `Could not save points: ${error.message}` : "Points setting saved.";
+  };
+  const bonusPointsForm = document.getElementById("lh-bonus-points");
+  if (bonusPointsForm) bonusPointsForm.onsubmit = async event => {
+    event.preventDefault();
+    const form = event.target.elements, message = document.getElementById("lh-bonus-points-message");
+    const button = event.target.querySelector('[type="submit"]');
+    button.disabled = true;
+    const { error } = await sb.rpc("grant_leadership_bonus_points", {
+      p_member_email: form.member_email.value,
+      p_points: Number(form.points.value),
+      p_reason: form.reason.value.trim(),
+    });
+    if (error) {
+      message.textContent = `Could not award points: ${error.message}`;
+      button.disabled = false;
+      return;
+    }
+    message.textContent = "Bonus points awarded.";
+    event.target.reset();
+    button.disabled = false;
   };
   document.getElementById("lh-shuffle-roles").onclick = async event => {
     event.preventDefault();
@@ -902,12 +967,31 @@ async function homeTabUI() {
 }
 
 async function studentsUI(notice = "") {
-  const { data, error } = await sb.rpc("list_students");
+  const [{ data, error }, { data: leaderRows, error: leaderError }] = await Promise.all([
+    sb.rpc("list_students"),
+    sb.from("leadership").select("email").order("email"),
+  ]);
   const students = data ?? [];
+  if (!leaderError) {
+    const knownEmails = new Set(students.map(student => student.email?.toLowerCase()));
+    (leaderRows || []).filter(member => !knownEmails.has(member.email.toLowerCase())).forEach(member => {
+      students.push({
+        email: member.email,
+        full_name: "",
+        last_sign_in_at: null,
+        must_change_password: false,
+        admin_role: false,
+        leader_role: true,
+        prelogin: true,
+      });
+    });
+  }
+  const loadError = error || leaderError;
   let removableCount = students.filter(student => !student.admin_role && !student.leader_role).length;
-  app.innerHTML = tabs() + `<h3>Students</h3><p><small>Everyone who has signed in to the portal. New accounts are created automatically when they sign in with Google. Removing a student permanently deletes their account; they can create it again by signing in with Google.</small></p>${error ? `<p class="auth-error">${esc(error.message)}, run update-6-students-list.sql first.</p>` : ""}
+  app.innerHTML = tabs() + `<h3>Students</h3><p><small>Everyone who has signed in to the portal, plus Student Leadership members added by email before their first sign-in. New accounts are created automatically when they sign in with Google. Removing a student permanently deletes their account; they can create it again by signing in with Google.</small></p>${loadError ? `<p class="auth-error">${esc(loadError.message)}, check update-6-students-list.sql and update-5a-leadership-team.sql.</p>` : ""}
     ${notice ? `<p class="role-note" role="status">${esc(notice)}</p>` : ""}
-    <p><button class="auth-btn alt" type="button" id="st-remove-all" ${error || removableCount === 0 ? "disabled" : ""}>Remove all students (${removableCount})</button></p>
+    ${ROLE === "admin" ? `<form id="st-add-leader"><h4>Add Student Leadership access before first sign-in</h4><label>Email address<input name="email" type="email" placeholder="name@latterup.org" required></label><button class="auth-btn" type="submit">Add Student Leadership member</button><small id="st-add-leader-message"></small></form>` : ""}
+    <p><button class="auth-btn alt" type="button" id="st-remove-all" ${loadError || removableCount === 0 ? "disabled" : ""}>Remove all students (${removableCount})</button></p>
     <label>Search<input id="st-q" type="search" placeholder="Type a name or email"></label><p><small id="st-count"></small></p><div id="st-list"></div>`;
   wire();
   const list = document.getElementById("st-list"), count = document.getElementById("st-count");
@@ -919,11 +1003,11 @@ async function studentsUI(notice = "") {
       const email = s.email || "";
       const canBeLeader = email.toLowerCase().endsWith("@latterup.org");
       return `<div class="row student-admin-row"><span>${s.full_name ? "<b>" + esc(s.full_name) + "</b> · " : ""}${esc(email)}
-        ${s.admin_role ? ' <span class="via-badge">Admin</span>' : ""}${s.must_change_password ? ' <span class="sched-badge">Hasn\'t chosen a password yet</span>' : ""}</span>
+        ${s.admin_role ? ' <span class="via-badge">Admin</span>' : ""}${s.prelogin ? ' <span class="sched-badge">Student Leadership · not signed in yet</span>' : ""}${s.must_change_password ? ' <span class="sched-badge">Hasn\'t chosen a password yet</span>' : ""}</span>
         <label class="chk student-leader-toggle" title="${canBeLeader ? "Add or remove Student Leadership access" : "Student Leadership requires an @latterup.org account"}">
-          <input type="checkbox" data-leader-toggle="${esc(email)}" ${s.leader_role ? "checked" : ""} ${error || !canBeLeader ? "disabled" : ""}> Student Leadership
+          <input type="checkbox" data-leader-toggle="${esc(email)}" ${s.leader_role ? "checked" : ""} ${loadError || !canBeLeader ? "disabled" : ""}> Student Leadership
         </label>
-        <span class="student-last-signin"><small>${s.last_sign_in_at ? "Last sign-in " + esc(new Date(s.last_sign_in_at).toLocaleDateString()) : "Never signed in"}</small>
+        <span class="student-last-signin"><small>${s.prelogin ? "No portal profile yet" : s.last_sign_in_at ? "Last sign-in " + esc(new Date(s.last_sign_in_at).toLocaleDateString()) : "Never signed in"}</small>
         ${!s.admin_role && !s.leader_role ? `<button class="auth-btn alt" type="button" data-remove-student="${esc(email)}">Remove student</button>` : ""}</span></div>`;
     }).join("") || "<p><small>No matches.</small></p>";
     list.querySelectorAll("[data-leader-toggle]").forEach(input => input.onchange = async () => {
@@ -952,7 +1036,26 @@ async function studentsUI(notice = "") {
     removableCount = students.filter(student => !student.admin_role && !student.leader_role).length;
     const removeAllButton = document.getElementById("st-remove-all");
     removeAllButton.textContent = `Remove all students (${removableCount})`;
-    removeAllButton.disabled = !!error || removableCount === 0;
+    removeAllButton.disabled = !!loadError || removableCount === 0;
+  };
+  const addLeaderForm = document.getElementById("st-add-leader");
+  if (addLeaderForm) addLeaderForm.onsubmit = async event => {
+    event.preventDefault();
+    const email = event.target.elements.email.value.trim().toLowerCase();
+    const message = document.getElementById("st-add-leader-message");
+    const button = event.target.querySelector('[type="submit"]');
+    if (!email.endsWith("@latterup.org")) {
+      message.textContent = "Use an @latterup.org email address.";
+      return;
+    }
+    button.disabled = true;
+    const { error: addError } = await sb.from("leadership").insert({ email });
+    if (addError) {
+      message.textContent = `Could not add ${email}: ${addError.message}`;
+      button.disabled = false;
+      return;
+    }
+    await studentsUI(`${email} now has Student Leadership access. They can sign in with Google when ready.`);
   };
   document.getElementById("st-q").oninput = paint;
   paint();

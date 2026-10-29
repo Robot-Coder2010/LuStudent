@@ -798,6 +798,8 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 .portal-announcement-banner { background: var(--navy); color: var(--cream); border-bottom: 3px solid var(--gold); }
 .portal-announcement-inner { display:flex; align-items:center; justify-content:center; gap:18px; padding:13px 24px; text-align:center; font-weight:600; }
 .portal-announcement-inner a { color:var(--cream); text-decoration:underline; text-underline-offset:3px; white-space:nowrap; }
+.portal-banner-dismiss { margin-left:auto; padding:.35rem .65rem; border:1px solid color-mix(in srgb,var(--cream) 55%,transparent); border-radius:999px; background:transparent; color:var(--cream); font:inherit; font-size:.78rem; white-space:nowrap; cursor:pointer; }
+.portal-banner-dismiss:hover { background:color-mix(in srgb,var(--cream) 14%,transparent); }
 .portal-announcement-banner[hidden] { display:none; }
 .card-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap:18px; }
 .portal-card { min-width:0; }
@@ -809,14 +811,20 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 .portal-admin-section input:not([type=checkbox]), .portal-admin-section select { width:100%; padding:10px 12px; border:1px solid var(--stone-line); border-radius:9px; background:var(--cream); color:inherit; font:inherit; }
 .portal-admin-section .inline-check { display:flex; align-items:center; gap:10px; }
 .portal-tile-edit { border:1px solid var(--stone-line); border-radius:12px; padding:16px; margin:14px 0; }
+.portal-tile-edit.is-dragging { opacity:.5; }
+.portal-tile-edit.drop-target { outline:2px solid var(--gold); outline-offset:2px; }
 .portal-tile-edit-head { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
+.portal-tile-drag-handle { margin-right:auto; color:var(--stone); font-size:.82rem; cursor:grab; }
+.portal-tiles-admin>summary { display:flex; align-items:center; justify-content:space-between; gap:1rem; color:var(--navy); cursor:pointer; }
+.portal-tiles-admin>summary h3 { margin:0; }
+.portal-tiles-admin>summary span { color:var(--stone); font-size:.85rem; }
 .portal-tile-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .portal-tile-fields .wide { grid-column:1/-1; }
 .portal-admin-actions { margin-top:16px; display:flex; gap:10px; flex-wrap:wrap; }
 .portal-cards-loading { color:var(--stone); }
 @media (max-width:1100px) { .card-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media (max-width:800px) { .card-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-@media (max-width:540px) { .card-grid { grid-template-columns:minmax(0,1fr); } .portal-announcement-inner { flex-direction:column; gap:6px; padding:12px 18px; } .portal-tile-fields { grid-template-columns:minmax(0,1fr); } .portal-tile-fields .wide { grid-column:auto; } }
+@media (max-width:540px) { .card-grid { grid-template-columns:minmax(0,1fr); } .portal-announcement-inner { flex-direction:column; gap:6px; padding:12px 18px; } .portal-banner-dismiss { margin:2px 0 0; } .portal-tile-fields { grid-template-columns:minmax(0,1fr); } .portal-tile-fields .wide { grid-column:auto; } }
 
 /* Photo Challenge refresh: editorial card layout in the site's navy, cream and gold palette */
 .photo-page { max-width: 1280px; padding: 2.4rem 0 4rem; }
@@ -975,8 +983,8 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 .leadership-section-heading .eyebrow { margin:0 0 .25rem; color:var(--stone); font-size:.75rem; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
 .leadership-section-heading h2 { margin:0; color:var(--navy); font-family:var(--font-display); font-weight:400; font-size:clamp(1.8rem,3.6vw,2.4rem); letter-spacing:.005em; }
 .leadership-rotation-badge { display:inline-flex; align-items:center; gap:.4rem; padding:.5rem .75rem; border-radius:980px; background:color-mix(in srgb,var(--gold) 38%,transparent); color:var(--navy); font-size:.84rem; font-weight:700; white-space:nowrap; }
-.leadership-chart { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); justify-items:center; gap:.8rem; }
-.leadership-role-card { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.65rem; min-height:140px; padding:1rem; overflow:hidden; border:1px solid var(--stone-line); border-radius:15px; background:linear-gradient(135deg,var(--surface),color-mix(in srgb,var(--tint) 48%,var(--surface))); text-align:center; }
+.leadership-chart { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); justify-items:stretch; gap:.8rem; width:100%; }
+.leadership-role-card { position:relative; display:flex; width:100%; min-width:0; flex-direction:column; align-items:center; justify-content:center; gap:.65rem; min-height:140px; padding:1rem; overflow:hidden; border:1px solid var(--stone-line); border-radius:15px; background:linear-gradient(135deg,var(--surface),color-mix(in srgb,var(--tint) 48%,var(--surface))); text-align:center; }
 .leadership-role-number { display:grid; width:46px; height:46px; flex:none; place-items:center; border-radius:14px; background:var(--gold); color:#17264F; font-size:.9rem; font-weight:800; }
 .leadership-role-copy h3 { margin:0 0 .3rem; color:var(--stone); font-size:.77rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
 .leadership-role-copy p { margin:0; color:var(--navy); font-size:1.12rem; font-weight:700; }
@@ -1023,6 +1031,8 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 .leadership-member-admin fieldset { display:flex; flex-wrap:wrap; gap:.7rem; border:1px solid var(--stone-line); border-radius:8px; }
 .leadership-member-admin fieldset label { display:flex; align-items:center; gap:.35rem; }
 .leadership-review-card { display:grid; gap:.8rem; }
+.leadership-admin-review-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr)); gap:1.25rem; align-items:start; }
+.leadership-admin-review-grid>.leadership-admin-section { min-width:0; margin:0; }
 .leadership-review-card img { display:block; max-width:min(100%,520px); max-height:420px; object-fit:contain; border-radius:8px; }
 .leadership-review-card>div:last-child { display:flex; flex-wrap:wrap; gap:.5rem; }
 @media(max-width:680px) {

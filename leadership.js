@@ -121,7 +121,7 @@
       <section class="leadership-section leadership-report-section" id="report-section">
         <div class="leadership-section-heading"><div><p class="eyebrow">Share a moment of connection</p><h2>Report My Chats</h2></div>
           <span class="leadership-section-icon">${LUIcon("camera", 23)}</span></div>
-        <p>Upload one screenshot of a Google Chat conversation and tell us who you chatted with. Reports are reviewed by an admin. Approved reports earn ${settingsResult.data.approval_points} points.</p>
+        <p>These reports help Student Leadership members connect with the student body and help everyone feel included. Share a conversation that helped someone feel welcomed or involved. An admin reviews each screenshot; approved reports earn ${settingsResult.data.approval_points} points.</p>
         <form id="chat-report-form" class="leadership-form">
           <label>Who did you chat with?<input name="chatted_with" maxlength="120" placeholder="Enter their name" required></label>
           <label class="leadership-file-field">Add a screenshot<input name="screenshot" type="file" accept="image/png,image/jpeg,image/webp" required><small>PNG, JPG, or WebP · Up to 10 MB. Only you and admins can view your screenshot.</small></label>
@@ -156,7 +156,7 @@
       await load();
     });
     await wireReports(session.user);
-    await loadRewards(session.user.id);
+    await loadRewards(session.user.id, userEmail);
   }
 
   async function wireReports(user) {
@@ -199,23 +199,27 @@
     };
   }
 
-  async function loadRewards(userId) {
+  async function loadRewards(userId, userEmail) {
     const summary = document.getElementById("points-summary");
     const prizeHost = document.getElementById("leadership-prizes");
     const claimsHost = document.getElementById("my-prize-claims");
-    const [reports, claims, prizes] = await Promise.all([
+    const [reports, claims, prizes, bonusResult] = await Promise.all([
       sb.from("leadership_chat_reports").select("points_awarded").eq("reporter_id", userId).eq("status", "approved"),
       sb.from("leadership_prize_claims").select("id,prize_name,points_cost,status,created_at").eq("user_id", userId).order("created_at", { ascending: false }),
       sb.from("leadership_prizes").select("id,name,description,points_cost").eq("active", true).order("created_at"),
+      sb.from("leadership_bonus_points").select("points,reason,created_at").eq("member_email", userEmail.toLowerCase()),
     ]);
-    const failed = [reports, claims, prizes].find(result => result.error);
+    const failed = [reports, claims, prizes, bonusResult].find(result => result.error);
     if (failed) {
-      summary.innerHTML = `<p class="auth-error">Points and prizes couldn't load: ${esc(failed.error.message)}</p>`;
+      summary.innerHTML = `<p class="auth-error">Points and prizes couldn't load: ${esc(failed.error.message)}${failed === bonusResult ? " Run update-14-leadership-bonus-points.sql in Supabase." : ""}</p>`;
       return;
     }
-    const earned = reports.data.reduce((total, report) => total + report.points_awarded, 0);
+    const chatPoints = reports.data.reduce((total, report) => total + report.points_awarded, 0);
+    const bonusPoints = bonusResult.data.reduce((total, entry) => total + entry.points, 0);
+    const earned = chatPoints + bonusPoints;
     const reserved = claims.data.filter(claim => ["pending", "approved"].includes(claim.status)).reduce((total, claim) => total + claim.points_cost, 0);
-    summary.innerHTML = `<div class="leadership-points-balance"><span>Available to spend<br><small>${earned} points earned</small></span><strong>${earned - reserved} points</strong></div>`;
+    summary.innerHTML = `<div class="leadership-points-balance"><span>Available to spend<br><small>${chatPoints} chat points + ${bonusPoints} bonus points</small></span><strong>${earned - reserved} points</strong></div>
+      ${bonusResult.data.length ? `<details class="leadership-bonus-history"><summary>Bonus points history</summary>${bonusResult.data.map(entry => `<p><strong>${entry.points} points</strong> · ${esc(entry.reason)} <small>${esc(new Date(entry.created_at).toLocaleDateString())}</small></p>`).join("")}</details>` : ""}`;
     prizeHost.innerHTML = prizes.data.map(prize => `<article class="leadership-prize-card">
       <h3>${esc(prize.name)}</h3><p>${esc(prize.description)}</p><p><strong>${prize.points_cost} points</strong></p>
       <button class="auth-btn" type="button" data-claim="${prize.id}" ${earned - reserved < prize.points_cost ? "disabled" : ""}>Request prize</button></article>`).join("")
@@ -228,7 +232,7 @@
         summary.insertAdjacentHTML("beforeend", `<p class="auth-error">${esc(error.message)}</p>`);
         return;
       }
-      await loadRewards(userId);
+      await loadRewards(userId, userEmail);
     });
     claimsHost.innerHTML = claims.data.map(claim => `<div class="leadership-list-row"><span>${esc(claim.prize_name)} · ${claim.points_cost} points</span><span class="sched-badge">${esc(claim.status)}</span></div>`).join("")
       || "<p>You haven't requested a prize yet.</p>";

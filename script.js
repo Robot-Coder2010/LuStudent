@@ -161,14 +161,14 @@
     }
   }
 
-  // ---------- Announcements: preview on index.html (2 most recent) ----------
+  // ---------- Announcements: preview on index.html (3 most recent) ----------
 
   const announcementsPreview = document.getElementById("announcements-preview-list");
   if (announcementsPreview) {
     if (!Array.isArray(window.ANNOUNCEMENT_ITEMS)) {
       showLoadError(announcementsPreview, "ANNOUNCEMENT_ITEMS", "announcements-data.js");
     } else {
-      const sorted = sortByDateDesc(window.ANNOUNCEMENT_ITEMS).slice(0, 2);
+      const sorted = sortByDateDesc(window.ANNOUNCEMENT_ITEMS).slice(0, 3);
       sorted.forEach((item, index) => {
         announcementsPreview.appendChild(buildAnnouncementEl(item, index));
       });

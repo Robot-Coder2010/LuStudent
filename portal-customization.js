@@ -94,7 +94,32 @@
       el.addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&!e.target.closest(".calendar-secondary")){e.preventDefault();open();}});
     });
     const host=document.getElementById("portal-announcement-banner");
-    if(host&&banner.enabled&&banner.text){host.hidden=false;host.innerHTML=`<div class="wrap portal-announcement-inner"><span>${esc(banner.text)}</span>${banner.link_text&&banner.link_url?`<a href="${esc(safeUrl(banner.link_url))}" ${/^https?:/i.test(banner.link_url)?'target="_blank" rel="noopener"':''}>${esc(banner.link_text)} ↗</a>`:""}</div>`;}
+    if(host&&banner.enabled&&banner.text){
+      let profileKey="visitor";
+      if(!window.LU_LOCAL_PREVIEW){
+        const {data:{session},error:sessionError}=await sb.auth.getSession();
+        if(sessionError) console.error("Banner dismissal profile could not be checked:",sessionError);
+        profileKey=session?.user?.id||profileKey;
+      }
+      const storageKey=`lu-banner-dismissal:${profileKey}`;
+      const fingerprint=JSON.stringify([banner.enabled,banner.text,banner.link_text,banner.link_url,banner.updated_at||""]);
+      let dismissal=null;
+      try { dismissal=JSON.parse(localStorage.getItem(storageKey)||"null"); }
+      catch(error) { console.warn("Banner dismissal could not be read:",error); }
+      const dismissed=dismissal?.fingerprint===fingerprint&&Number(dismissal.until)>Date.now();
+      host.innerHTML=`<div class="wrap portal-announcement-inner"><span>${esc(banner.text)}</span>${banner.link_text&&banner.link_url?`<a href="${esc(safeUrl(banner.link_url))}" ${/^https?:/i.test(banner.link_url)?'target="_blank" rel="noopener"':''}>${esc(banner.link_text)} ↗</a>`:""}<button class="portal-banner-dismiss" type="button" aria-label="Dismiss this banner until 6 AM tomorrow">Dismiss for today</button></div>`;
+      host.hidden=dismissed;
+      const dismissButton=host.querySelector(".portal-banner-dismiss");
+      dismissButton.onclick=()=>{
+        const until=new Date();
+        until.setDate(until.getDate()+1);
+        until.setHours(6,0,0,0);
+        try { localStorage.setItem(storageKey,JSON.stringify({fingerprint,until:until.getTime()})); }
+        catch(error) { console.warn("Banner dismissal could not be saved:",error); }
+        host.hidden=true;
+        setTimeout(()=>{host.hidden=false;},Math.max(0,until.getTime()-Date.now()));
+      };
+    } else if(host) host.hidden=true;
   }
   if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",run); else run();
 })();
