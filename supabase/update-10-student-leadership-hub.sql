@@ -36,11 +36,15 @@ create table if not exists public.leadership_chart_roles (
   name text not null unique check (length(trim(name)) between 1 and 80),
   sort_order int not null default 0
 );
-insert into public.leadership_chart_roles (name, sort_order) values
-  ('Opening Prayer', 1),
-  ('Spiritual Thought', 2),
-  ('Do you know them?', 3),
-  ('Closing Prayer', 4)
+insert into public.leadership_chart_roles (name, sort_order)
+select defaults.name, defaults.sort_order
+  from (values
+    ('Opening Prayer', 1),
+    ('Spiritual Thought', 2),
+    ('Do you know them?', 3),
+    ('Closing Prayer', 4)
+  ) as defaults(name, sort_order)
+ where not exists (select 1 from public.leadership_chart_roles)
 on conflict (name) do nothing;
 
 create table if not exists public.leadership_member_roles (
@@ -61,7 +65,6 @@ begin
   on conflict (email) do nothing;
   insert into public.leadership_member_roles (member_email, role_id)
   select new.email, id from public.leadership_chart_roles
-  where name in ('Opening Prayer', 'Spiritual Thought', 'Do you know them?', 'Closing Prayer')
   on conflict (member_email, role_id) do nothing;
   return new;
 end $$;
@@ -76,6 +79,7 @@ select members.email, roles.id
   from public.leadership_chart_members members
   cross join public.leadership_chart_roles roles
  where roles.name in ('Opening Prayer', 'Spiritual Thought', 'Do you know them?', 'Closing Prayer')
+   and not exists (select 1 from public.leadership_member_roles)
 on conflict (member_email, role_id) do nothing;
 
 create table if not exists public.leadership_chat_reports (
@@ -266,16 +270,35 @@ begin
 end $$;
 grant execute on function public.set_leadership_member_roles(text, uuid[]) to authenticated;
 
+create or replace function public.add_leadership_chart_role(p_name text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  new_role_id uuid;
+begin
+  if not public.is_admin() then raise exception 'Admins only.'; end if;
+  if p_name is null or length(trim(p_name)) not between 1 and 80 then
+    raise exception 'Role names must be between 1 and 80 characters.';
+  end if;
+  insert into public.leadership_chart_roles (name, sort_order)
+  values (trim(p_name), coalesce((select max(sort_order) from public.leadership_chart_roles), 0) + 1)
+  returning id into new_role_id;
+  insert into public.leadership_member_roles (member_email, role_id)
+  select email, new_role_id from public.leadership_chart_members
+  on conflict (member_email, role_id) do nothing;
+  return new_role_id;
+end $$;
+revoke all on function public.add_leadership_chart_role(text) from public, anon;
+grant execute on function public.add_leadership_chart_role(text) to authenticated;
+
 create or replace function public.set_leadership_chart_role_order(p_role_ids uuid[])
 returns void language plpgsql security definer set search_path = public as $$
 begin
   if not public.is_admin() then raise exception 'Admins only.'; end if;
-  if coalesce(cardinality(p_role_ids), 0) <> 4
-     or (select count(distinct role_id) from unnest(p_role_ids) as roles(role_id)) <> 4
-     or (select count(*) from public.leadership_chart_roles
-          where id = any(p_role_ids)
-            and name in ('Opening Prayer', 'Spiritual Thought', 'Do you know them?', 'Closing Prayer')) <> 4 then
-    raise exception 'Provide each of the four Student Leadership chart roles once.';
+  if coalesce(cardinality(p_role_ids), 0) = 0
+     or (select count(distinct role_id) from unnest(p_role_ids) as roles(role_id)) <> cardinality(p_role_ids)
+     or cardinality(p_role_ids) <> (select count(*) from public.leadership_chart_roles)
+     or (select count(*) from public.leadership_chart_roles where id = any(p_role_ids)) <> cardinality(p_role_ids) then
+    raise exception 'Provide every Student Leadership chart role exactly once.';
   end if;
   update public.leadership_chart_roles role
      set sort_order = requested.position::integer
@@ -283,6 +306,22 @@ begin
    where role.id = requested.role_id;
 end $$;
 grant execute on function public.set_leadership_chart_role_order(uuid[]) to authenticated;
+
+create or replace function public.shuffle_leadership_member_order()
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Admins only.'; end if;
+  with shuffled as (
+    select email, row_number() over (order by gen_random_uuid())::integer as position
+      from public.leadership_chart_members
+  )
+  update public.leadership_chart_members member
+     set sort_order = shuffled.position
+    from shuffled
+   where member.email = shuffled.email;
+end $$;
+revoke all on function public.shuffle_leadership_member_order() from public, anon;
+grant execute on function public.shuffle_leadership_member_order() to authenticated;
 
 create or replace function public.remove_student_account(p_email text)
 returns table (email text) language plpgsql security definer set search_path = public, auth as $$

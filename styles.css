@@ -1022,6 +1022,15 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 .leadership-admin-collapsible[open]>summary { margin-bottom:1rem; }
 .leadership-admin-collapsible>p { color:var(--stone); line-height:1.5; }
 .leadership-admin-role-order { padding:.75rem 1rem; border-radius:10px; background:var(--tint); color:var(--navy)!important; }
+.leadership-role-management { margin:1.25rem 0; padding:1rem; border:1px solid var(--stone-line); border-radius:14px; background:var(--surface); }
+.leadership-role-management h4 { margin:.25rem 0; color:var(--navy); }
+.leadership-role-management>p { color:var(--stone); }
+.leadership-role-admin-row { display:grid; grid-template-columns:minmax(180px,1fr) 120px auto minmax(100px,auto); align-items:end; gap:.75rem; padding:.75rem 0; border-bottom:1px solid var(--stone-line); }
+.leadership-role-admin-row label { display:grid; gap:.35rem; color:var(--navy); font-size:.86rem; font-weight:700; }
+.leadership-role-admin-row input { min-width:0; padding:.55rem; border:1px solid var(--stone-line); border-radius:8px; }
+.leadership-role-management form { display:flex; flex-wrap:wrap; align-items:end; gap:.75rem; margin:.9rem 0; }
+.leadership-role-management form label { display:grid; flex:1; min-width:200px; gap:.35rem; color:var(--navy); font-size:.86rem; font-weight:700; }
+.leadership-role-management form input { padding:.55rem; border:1px solid var(--stone-line); border-radius:8px; }
 .leadership-member-admin fieldset { display:flex; flex-wrap:wrap; gap:.7rem; border:1px solid var(--stone-line); border-radius:8px; }
 .leadership-member-admin fieldset label { display:flex; align-items:center; gap:.35rem; }
 .leadership-review-card { display:grid; gap:.8rem; }
@@ -1044,6 +1053,8 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
   .leadership-rotation-badge { padding:.4rem .55rem; font-size:.72rem; }
   .leadership-list-row { align-items:flex-start; flex-direction:column; }
   .leadership-member-admin fieldset { display:grid; }
+  .leadership-role-admin-row { grid-template-columns:1fr 90px; }
+  .leadership-role-admin-row small { grid-column:1/-1; }
 }
 
 /* merged Photo Challenge admin tab + gallery of all photos in a theme */

@@ -5,7 +5,6 @@
   const showError = (host, message) => {
     host.innerHTML = `<p class="auth-error">${esc(message)}</p>`;
   };
-  const chartRoleNames = ["Opening Prayer", "Spiritual Thought", "Do you know them?", "Closing Prayer"];
   const weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
   function rotationWeekIndex(weekday) {
@@ -75,7 +74,7 @@
 
     const [membersResult, rolesResult, assignmentsResult] = await Promise.all([
       sb.from("leadership_chart_members").select("email,display_name,in_cycle,sort_order").order("sort_order").order("display_name"),
-      sb.from("leadership_chart_roles").select("id,name,sort_order").in("name", chartRoleNames).order("sort_order").order("name"),
+      sb.from("leadership_chart_roles").select("id,name,sort_order").order("sort_order").order("name"),
       sb.from("leadership_member_roles").select("member_email,role_id"),
     ]);
     const failed = [membersResult, rolesResult, assignmentsResult].find(result => result.error);

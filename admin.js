@@ -6,7 +6,6 @@ const T = {
   faq: { label: "FAQ", order: "sort_order", asc: 1, title: "question", f: [["question", "Question"], ["answer", "Answer (links and line breaks OK)", "textarea"], ["sort_order", "Order (1 = first)", "number"]] },
   themes: { label: "Photo Challenge", order: "starts_at", title: "title", f: [["title", "Theme"], ["description", "Description", "textarea"], ["starts_at", "Starts", "datetime"], ["ends_at", "Ends (next theme starts then)", "datetime"], ["video_path", "Finished video (optional)", "file", "video/mp4,video/webm"]] },
 };
-const LEADERSHIP_CHART_ROLES = ["Opening Prayer", "Spiritual Thought", "Do you know them?", "Closing Prayer"];
 const DEFAULT_ADMIN_TAB_ORDER = ["announcements", "videos", "themes", "_h", "home", "_s", "_a", "_n"];
 let cur = "announcements", ROLE = "student";
 let ADMIN_TAB_ORDER = DEFAULT_ADMIN_TAB_ORDER.slice(), ADMIN_TAB_ORDER_ERROR = "";
@@ -484,7 +483,7 @@ async function studentLeadershipUI() {
   const [settingsResult, membersResult, rolesResult, assignmentResult, reportsResult, prizesResult, claimsResult] = await Promise.all([
     sb.from("leadership_hub_settings").select("*").eq("id", 1).single(),
     sb.from("leadership_chart_members").select("*").order("sort_order").order("display_name"),
-    sb.from("leadership_chart_roles").select("*").in("name", LEADERSHIP_CHART_ROLES).order("sort_order").order("name"),
+    sb.from("leadership_chart_roles").select("*").order("sort_order").order("name"),
     sb.from("leadership_member_roles").select("*"),
     sb.from("leadership_chat_reports").select("*").eq("status", "pending").order("created_at"),
     sb.from("leadership_prizes").select("*").order("created_at"),
@@ -521,7 +520,20 @@ async function studentLeadershipUI() {
       <summary>Weekly role chart assignments</summary>
       <p>Choose the roles each member can rotate through and who is included in the chart. These controls do not remove anyone from Student Leadership.</p>
       <p class="leadership-admin-role-order"><b>Current chart order:</b> ${roles.map((role, index) => `${index + 1}. ${esc(role.name)}`).join(" · ")}</p>
-      <button class="auth-btn alt" type="button" id="lh-shuffle-roles">Shuffle role order</button>
+      <section class="leadership-role-management">
+        <h4>Chart roles</h4>
+        <p>Add roles, edit their names, and set their order in the weekly chart.</p>
+        <div id="lh-role-list">${roles.map((role, index) => `<div class="leadership-role-admin-row" data-role="${role.id}">
+          <label>Role name<input data-role-name maxlength="80" value="${esc(role.name)}"></label>
+          <label>Chart order<input data-role-order type="number" min="1" step="1" value="${index + 1}"></label>
+          <button class="auth-btn alt" type="button" data-save-role>Save name</button><small data-role-message></small>
+        </div>`).join("")}</div>
+        <form id="lh-add-role"><label>New role name<input name="name" maxlength="80" required></label>
+          <button class="auth-btn" type="submit">Add role</button><small id="lh-add-role-message"></small></form>
+        <button class="auth-btn" type="button" id="lh-save-role-order">Save chart role order</button>
+        <small id="lh-role-order-message"></small>
+      </section>
+      <button class="auth-btn alt" type="button" id="lh-shuffle-roles">Shuffle member rotation order</button>
       <div id="lh-member-list">${members.map(member => `<article class="leadership-member-admin" data-member="${esc(member.email)}">
         <label>Display name<input data-display-name maxlength="120" value="${esc(member.display_name)}"></label>
         <label>Rotation order<input data-sort-order type="number" step="1" value="${member.sort_order}"></label>
@@ -544,6 +556,48 @@ async function studentLeadershipUI() {
   wire();
   const assignmentsDetails = document.querySelector(".leadership-admin-collapsible");
   assignmentsDetails.addEventListener("toggle", () => { leadershipAssignmentsOpen = assignmentsDetails.open; });
+  document.querySelectorAll("[data-save-role]").forEach(button => button.onclick = async () => {
+    const row = button.closest("[data-role]"), message = row.querySelector("[data-role-message]");
+    const name = row.querySelector("[data-role-name]").value.trim();
+    if (!name) { message.textContent = "Enter a role name."; return; }
+    button.disabled = true;
+    const { error } = await sb.from("leadership_chart_roles").update({ name }).eq("id", row.dataset.role);
+    if (error) { message.textContent = `Could not save role: ${error.message}`; button.disabled = false; return; }
+    leadershipAssignmentsOpen = true;
+    await studentLeadershipUI();
+  });
+  document.getElementById("lh-add-role").onsubmit = async event => {
+    event.preventDefault();
+    const form = event.target, input = form.elements.name, message = document.getElementById("lh-add-role-message");
+    const name = input.value.trim();
+    if (!name) { message.textContent = "Enter a role name."; return; }
+    const button = form.querySelector('[type="submit"]');
+    button.disabled = true;
+    const { error } = await sb.rpc("add_leadership_chart_role", { p_name: name });
+    if (error) { message.textContent = `Could not add role: ${error.message}`; button.disabled = false; return; }
+    leadershipAssignmentsOpen = true;
+    await studentLeadershipUI();
+  };
+  document.getElementById("lh-save-role-order").onclick = async event => {
+    const button = event.currentTarget, message = document.getElementById("lh-role-order-message");
+    const roleRows = [...document.querySelectorAll("[data-role]")];
+    const requestedOrder = roleRows.map(row => ({
+      id: row.dataset.role,
+      order: Number(row.querySelector("[data-role-order]").value),
+    }));
+    const orderNumbers = requestedOrder.map(role => role.order);
+    if (orderNumbers.some(order => !Number.isInteger(order) || order < 1)
+        || new Set(orderNumbers).size !== requestedOrder.length) {
+      message.textContent = "Use a different whole-number order for each role.";
+      return;
+    }
+    requestedOrder.sort((left, right) => left.order - right.order);
+    button.disabled = true;
+    const { error } = await sb.rpc("set_leadership_chart_role_order", { p_role_ids: requestedOrder.map(role => role.id) });
+    if (error) { message.textContent = `Could not save role order: ${error.message}`; button.disabled = false; return; }
+    leadershipAssignmentsOpen = true;
+    await studentLeadershipUI();
+  };
 
   const settingsForm = document.getElementById("lh-settings"), settingsMessage = document.getElementById("lh-settings-message");
   settingsForm.onsubmit = async event => {
@@ -567,21 +621,9 @@ async function studentLeadershipUI() {
     event.preventDefault();
     event.stopPropagation();
     const button = event.currentTarget;
-    const shuffledRoles = roles.slice();
-    for (let index = shuffledRoles.length - 1; index > 0; index--) {
-      const swapIndex = Math.floor(Math.random() * (index + 1));
-      [shuffledRoles[index], shuffledRoles[swapIndex]] = [shuffledRoles[swapIndex], shuffledRoles[index]];
-    }
-    if (shuffledRoles.length !== LEADERSHIP_CHART_ROLES.length) {
-      alert("The four chart roles could not be loaded. Run update-10-student-leadership-hub.sql.");
-      return;
-    }
-    if (shuffledRoles.every((role, index) => role.id === roles[index].id)) {
-      shuffledRoles.push(shuffledRoles.shift());
-    }
     button.disabled = true;
-    const { error } = await sb.rpc("set_leadership_chart_role_order", { p_role_ids: shuffledRoles.map(role => role.id) });
-    if (error) { alert(`Could not shuffle role order: ${error.message}`); button.disabled = false; return; }
+    const { error } = await sb.rpc("shuffle_leadership_member_order");
+    if (error) { alert(`Could not shuffle member rotation order: ${error.message}`); button.disabled = false; return; }
     leadershipAssignmentsOpen = true;
     await studentLeadershipUI();
   };
