@@ -53,6 +53,30 @@ create table if not exists public.leadership_member_roles (
   primary key (member_email, role_id)
 );
 
+create table if not exists public.leadership_rotation_exclusions (
+  week_start date not null,
+  member_email text not null references public.leadership_chart_members(email) on delete cascade,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  primary key (week_start, member_email)
+);
+
+create table if not exists public.leadership_rotation_skip_requests (
+  id uuid primary key default gen_random_uuid(),
+  week_start date not null,
+  member_email text not null references public.leadership_chart_members(email) on delete cascade,
+  requested_by uuid not null references auth.users(id) on delete cascade,
+  reason text not null check (length(trim(reason)) between 1 and 500),
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  created_at timestamptz not null default now(),
+  reviewed_by uuid references auth.users(id) on delete set null,
+  reviewed_at timestamptz,
+  unique (week_start, member_email),
+  check ((status = 'pending' and reviewed_at is null) or (status <> 'pending' and reviewed_at is not null))
+);
+create index if not exists leadership_rotation_skip_requests_queue
+  on public.leadership_rotation_skip_requests (week_start, status, created_at);
+
 create or replace function public.sync_leadership_chart_member()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
@@ -161,6 +185,8 @@ alter table public.leadership_hub_settings enable row level security;
 alter table public.leadership_chart_members enable row level security;
 alter table public.leadership_chart_roles enable row level security;
 alter table public.leadership_member_roles enable row level security;
+alter table public.leadership_rotation_exclusions enable row level security;
+alter table public.leadership_rotation_skip_requests enable row level security;
 alter table public.leadership_chat_reports enable row level security;
 alter table public.leadership_prizes enable row level security;
 alter table public.leadership_prize_claims enable row level security;
@@ -192,6 +218,13 @@ create policy "leadership member roles read" on public.leadership_member_roles
 drop policy if exists "leadership member roles admin" on public.leadership_member_roles;
 create policy "leadership member roles admin" on public.leadership_member_roles
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
+drop policy if exists "leadership rotation exclusions read" on public.leadership_rotation_exclusions;
+create policy "leadership rotation exclusions read" on public.leadership_rotation_exclusions
+  for select to authenticated using (public.can_view_leadership_hub());
+drop policy if exists "leadership rotation skip requests read" on public.leadership_rotation_skip_requests;
+create policy "leadership rotation skip requests read" on public.leadership_rotation_skip_requests
+  for select to authenticated using (public.is_admin() or requested_by = auth.uid());
 
 drop policy if exists "leadership chat reports insert" on public.leadership_chat_reports;
 create policy "leadership chat reports insert" on public.leadership_chat_reports
@@ -227,6 +260,7 @@ grant select, update on public.leadership_hub_settings to authenticated;
 grant select, insert, update, delete on public.leadership_chart_members to authenticated;
 grant select, insert, update, delete on public.leadership_chart_roles to authenticated;
 grant select, insert, delete on public.leadership_member_roles to authenticated;
+grant select on public.leadership_rotation_exclusions, public.leadership_rotation_skip_requests to authenticated;
 grant select, insert on public.leadership_chat_reports to authenticated;
 grant select, insert, update, delete on public.leadership_prizes to authenticated;
 grant select on public.leadership_prize_claims to authenticated;
@@ -306,6 +340,97 @@ begin
    where role.id = requested.role_id;
 end $$;
 grant execute on function public.set_leadership_chart_role_order(uuid[]) to authenticated;
+
+create or replace function public.request_leadership_rotation_skip(p_week_start date, p_reason text)
+returns uuid language plpgsql security definer set search_path = public, auth as $$
+declare
+  caller uuid := auth.uid();
+  caller_email text := lower(coalesce(auth.jwt()->>'email', ''));
+  rotation_day int;
+  expected_week_start date;
+  request_id uuid;
+begin
+  if caller is null or not public.can_view_leadership_hub()
+     or (not public.is_admin() and not public.is_leader()) then
+    raise exception 'Student Leadership access is required.';
+  end if;
+  if length(trim(coalesce(p_reason, ''))) not between 1 and 500 then
+    raise exception 'Please provide a reason of 1 to 500 characters.';
+  end if;
+  select rotation_weekday into rotation_day from public.leadership_hub_settings where id = 1;
+  expected_week_start := (now() at time zone 'UTC')::date
+    - (((extract(dow from (now() at time zone 'UTC'))::integer - rotation_day + 7) % 7));
+  if p_week_start <> expected_week_start then
+    raise exception 'Requests can only be made for the current rotation week.';
+  end if;
+  if not exists (
+    select 1 from public.leadership_chart_members member
+    join public.leadership_member_roles assignment on assignment.member_email = member.email
+    where lower(member.email) = caller_email and member.in_cycle
+  ) then
+    raise exception 'You are not currently eligible for the Student Leadership rotation.';
+  end if;
+  insert into public.leadership_rotation_skip_requests (week_start, member_email, requested_by, reason)
+  values (p_week_start, caller_email, caller, trim(p_reason))
+  returning id into request_id;
+  return request_id;
+exception
+  when unique_violation then
+    raise exception 'A rotation request already exists for you this week.';
+end $$;
+revoke all on function public.request_leadership_rotation_skip(date, text) from public, anon;
+grant execute on function public.request_leadership_rotation_skip(date, text) to authenticated;
+
+create or replace function public.review_leadership_rotation_skip(p_request_id uuid, p_decision text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  request public.leadership_rotation_skip_requests;
+begin
+  if not public.is_admin() then raise exception 'Admins only.'; end if;
+  if p_decision not in ('approved', 'rejected') then
+    raise exception 'Decision must be approved or rejected.';
+  end if;
+  update public.leadership_rotation_skip_requests
+     set status = p_decision, reviewed_by = auth.uid(), reviewed_at = now()
+   where id = p_request_id and status = 'pending'
+  returning * into request;
+  if not found then raise exception 'This rotation request is no longer waiting for review.'; end if;
+  if p_decision = 'approved' then
+    insert into public.leadership_rotation_exclusions (week_start, member_email, created_by)
+    values (request.week_start, request.member_email, auth.uid())
+    on conflict (week_start, member_email) do nothing;
+  end if;
+end $$;
+revoke all on function public.review_leadership_rotation_skip(uuid, text) from public, anon;
+grant execute on function public.review_leadership_rotation_skip(uuid, text) to authenticated;
+
+create or replace function public.set_leadership_rotation_exclusion(p_week_start date, p_member_email text, p_excluded boolean)
+returns void language plpgsql security definer set search_path = public, auth as $$
+declare
+  rotation_day int;
+  expected_week_start date;
+begin
+  if not public.is_admin() then raise exception 'Admins only.'; end if;
+  select rotation_weekday into rotation_day from public.leadership_hub_settings where id = 1;
+  expected_week_start := (now() at time zone 'UTC')::date
+    - (((extract(dow from (now() at time zone 'UTC'))::integer - rotation_day + 7) % 7));
+  if p_week_start <> expected_week_start then
+    raise exception 'This action only applies to the current rotation week.';
+  end if;
+  if not exists (select 1 from public.leadership_chart_members where lower(email) = lower(trim(p_member_email))) then
+    raise exception 'That person is not on the Student Leadership chart.';
+  end if;
+  if p_excluded then
+    insert into public.leadership_rotation_exclusions (week_start, member_email, created_by)
+    values (p_week_start, lower(trim(p_member_email)), auth.uid())
+    on conflict (week_start, member_email) do nothing;
+  else
+    delete from public.leadership_rotation_exclusions
+     where week_start = p_week_start and member_email = lower(trim(p_member_email));
+  end if;
+end $$;
+revoke all on function public.set_leadership_rotation_exclusion(date, text, boolean) from public, anon;
+grant execute on function public.set_leadership_rotation_exclusion(date, text, boolean) to authenticated;
 
 create or replace function public.shuffle_leadership_member_order()
 returns void language plpgsql security definer set search_path = public as $$

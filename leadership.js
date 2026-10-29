@@ -18,10 +18,20 @@
     return Math.floor((lastRotation.getTime() - firstRotation) / (7 * 86400000));
   }
 
-  function currentAssignments(members, roleNames, weekIndex) {
+  function rotationWeekStart(weekday) {
+    const now = new Date();
+    const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const thisWeekday = new Date(todayUtc).getUTCDay();
+    const daysSinceRotation = (thisWeekday - weekday + 7) % 7;
+    return new Date(todayUtc - daysSinceRotation * 86400000).toISOString().slice(0, 10);
+  }
+
+  function currentAssignments(members, roleNames, weekIndex, excludedEmails) {
     const assigned = new Set();
     return roleNames.map((role, roleIndex) => {
-      const candidates = members.filter(member => member.in_cycle && member.roles.includes(role));
+      const candidates = members.filter(member =>
+        member.in_cycle && !excludedEmails.has(member.email.toLowerCase()) && member.roles.includes(role)
+      );
       if (!candidates.length) return { role, member: null };
       const start = (weekIndex + roleIndex) % candidates.length;
       const rotated = candidates.map((_, index) => candidates[(start + index) % candidates.length]);
@@ -31,8 +41,8 @@
     });
   }
 
-  function renderChart(host, members, roleNames, weekday) {
-    const assignments = currentAssignments(members, roleNames, rotationWeekIndex(weekday));
+  function renderChart(host, members, roleNames, weekday, excludedEmails, userEmail, skipRequest) {
+    const assignments = currentAssignments(members, roleNames, rotationWeekIndex(weekday), excludedEmails);
     host.innerHTML = `<section class="leadership-section leadership-chart-section" aria-labelledby="weekly-chart-title">
       <div class="leadership-section-heading">
         <div><p class="eyebrow">This week's assignments</p><h2 id="weekly-chart-title">Weekly role chart</h2></div>
@@ -42,7 +52,12 @@
         ${assignments.map(({ role, member }, index) => `<article class="leadership-role-card">
           <span class="leadership-role-number">0${index + 1}</span>
           <div class="leadership-role-copy"><h3>${esc(role)}</h3>
-            <p>${member ? esc(member.display_name) : "No eligible member assigned yet"}</p></div>
+            <p>${member ? esc(member.display_name) : "No eligible member assigned yet"}</p>
+            ${member && member.email.toLowerCase() === userEmail && !excludedEmails.has(userEmail)
+              ? skipRequest?.status
+                ? `<small class="leadership-skip-status">Week-off request ${esc(skipRequest.status)}${skipRequest.status === "rejected" ? ". Contact an admin if you still need help." : "."}</small>`
+                : `<button class="auth-btn alt leadership-skip-request" type="button" data-request-week-off>Request this week off</button>`
+              : ""}</div>
         </article>`).join("")}
       </div>
       <p class="leadership-chart-note">The chart updates automatically every ${weekdayNames[weekday]} (UTC).</p>
@@ -72,12 +87,16 @@
       return;
     }
 
-    const [membersResult, rolesResult, assignmentsResult] = await Promise.all([
+    const weekStart = rotationWeekStart(settingsResult.data.rotation_weekday);
+    const userEmail = (session.user.email || "").toLowerCase();
+    const [membersResult, rolesResult, assignmentsResult, exclusionsResult, skipRequestResult] = await Promise.all([
       sb.from("leadership_chart_members").select("email,display_name,in_cycle,sort_order").order("sort_order").order("display_name"),
       sb.from("leadership_chart_roles").select("id,name,sort_order").order("sort_order").order("name"),
       sb.from("leadership_member_roles").select("member_email,role_id"),
+      sb.from("leadership_rotation_exclusions").select("member_email").eq("week_start", weekStart),
+      sb.from("leadership_rotation_skip_requests").select("status").eq("week_start", weekStart).eq("member_email", userEmail).maybeSingle(),
     ]);
-    const failed = [membersResult, rolesResult, assignmentsResult].find(result => result.error);
+    const failed = [membersResult, rolesResult, assignmentsResult, exclusionsResult, skipRequestResult].find(result => result.error);
     if (failed) return showError(app, `The Student Leadership hub could not load: ${failed.error.message}. Ask an admin to run update-10-student-leadership-hub.sql.`);
     const roleNames = new Map(rolesResult.data.map(item => [item.id, item.name]));
     const assignments = new Map();
@@ -104,7 +123,28 @@
         <div id="points-summary">Loading your points…</div>
         <div id="leadership-prizes" class="leadership-prize-grid"></div>
         <div class="leadership-claims"><h3>My prize requests</h3><div id="my-prize-claims"></div></div></section>`;
-    renderChart(document.getElementById("weekly-role-chart"), members, rolesResult.data.map(item => item.name), settingsResult.data.rotation_weekday);
+    const excludedEmails = new Set(exclusionsResult.data.map(item => item.member_email.toLowerCase()));
+    renderChart(document.getElementById("weekly-role-chart"), members, rolesResult.data.map(item => item.name),
+      settingsResult.data.rotation_weekday, excludedEmails, userEmail, skipRequestResult.data);
+    document.querySelectorAll("[data-request-week-off]").forEach(button => button.onclick = async () => {
+      const reason = prompt("Please explain why you need to be removed from this week's Student Leadership rotation (up to 500 characters).");
+      if (reason === null) return;
+      if (!reason.trim() || reason.trim().length > 500) {
+        alert("Enter a reason between 1 and 500 characters.");
+        return;
+      }
+      button.disabled = true;
+      const { error } = await sb.rpc("request_leadership_rotation_skip", {
+        p_week_start: weekStart,
+        p_reason: reason.trim(),
+      });
+      if (error) {
+        alert(`Could not submit your request: ${error.message}`);
+        button.disabled = false;
+        return;
+      }
+      await load();
+    });
     await wireReports(session.user);
     await loadRewards(session.user.id);
   }

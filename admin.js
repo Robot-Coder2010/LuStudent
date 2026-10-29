@@ -13,6 +13,12 @@ let leadershipAssignmentsOpen = false;
 const hasGoogleIdentity = user => user?.app_metadata?.provider === "google"
   || (Array.isArray(user?.app_metadata?.providers) && user.app_metadata.providers.includes("google"))
   || user?.identities?.some(identity => identity.provider === "google");
+const rotationWeekStart = weekday => {
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const daysSinceRotation = (new Date(todayUtc).getUTCDay() - weekday + 7) % 7;
+  return new Date(todayUtc - daysSinceRotation * 86400000).toISOString().slice(0, 10);
+};
 const loc = v => { const d = new Date(v); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16); };
 const isValidTimeZone = value => {
   try { new Intl.DateTimeFormat("en-US", { timeZone: value }).format(); return true; }
@@ -496,6 +502,18 @@ async function studentLeadershipUI() {
     return;
   }
   const settings = settingsResult.data, members = membersResult.data, roles = rolesResult.data;
+  const weekStart = rotationWeekStart(settings.rotation_weekday);
+  const [exclusionsResult, skipRequestsResult] = await Promise.all([
+    sb.from("leadership_rotation_exclusions").select("member_email").eq("week_start", weekStart),
+    sb.from("leadership_rotation_skip_requests").select("id,week_start,member_email,reason,created_at").eq("status", "pending").order("week_start").order("created_at"),
+  ]);
+  const rotationFailure = [exclusionsResult, skipRequestsResult].find(result => result.error);
+  if (rotationFailure) {
+    app.innerHTML = tabs() + `<p class="auth-error">Weekly rotation requests could not load: ${esc(rotationFailure.error.message)}. Run the latest update-10-student-leadership-hub.sql in Supabase SQL Editor.</p>`;
+    wire();
+    return;
+  }
+  const excludedEmails = new Set(exclusionsResult.data.map(item => item.member_email.toLowerCase()));
   const roleIdsByMember = new Map();
   assignmentResult.data.forEach(row => {
     if (!roleIdsByMember.has(row.member_email)) roleIdsByMember.set(row.member_email, []);
@@ -539,9 +557,13 @@ async function studentLeadershipUI() {
         <label>Rotation order<input data-sort-order type="number" step="1" value="${member.sort_order}"></label>
         <label class="chk"><input data-in-cycle type="checkbox" ${member.in_cycle ? "checked" : ""}> Include in weekly rotation</label>
         <fieldset><legend>Eligible roles</legend>${roles.map(role => `<label class="chk"><input data-member-role type="checkbox" value="${role.id}" ${(roleIdsByMember.get(member.email) || []).includes(role.id) ? "checked" : ""}> ${esc(role.name)}</label>`).join("") || "<small>Run update-10-student-leadership-hub.sql to add the chart roles.</small>"}</fieldset>
+        <button class="auth-btn alt" type="button" data-toggle-week-exclusion="${esc(member.email)}" data-excluded="${excludedEmails.has(member.email.toLowerCase())}">
+          ${excludedEmails.has(member.email.toLowerCase()) ? "Restore this week's rotation" : "Remove from this week's rotation"}
+        </button>
         <button class="auth-btn" type="button" data-save-member>Save member</button><small data-member-message></small>
       </article>`).join("") || "<p>No Student Leadership members have been added yet.</p>"}</div>
     </details>
+    ${ROLE === "admin" ? `<section class="leadership-admin-section"><h3>Requests to skip this week's rotation</h3><div id="lh-rotation-skip-queue"></div></section>` : ""}
     <section class="leadership-admin-section"><h3>Chat reports awaiting approval</h3><div id="lh-report-queue"></div></section>
     <section class="leadership-admin-section"><h3>Prize catalog</h3>
       <form id="lh-add-prize"><label>Prize name<input name="name" maxlength="120" required></label><label>Description<textarea name="description" rows="2"></textarea></label><label>Points required<input name="points_cost" type="number" min="1" max="100000" required></label><button class="auth-btn" type="submit">Add prize</button><small id="lh-prize-message"></small></form>
@@ -556,6 +578,24 @@ async function studentLeadershipUI() {
   wire();
   const assignmentsDetails = document.querySelector(".leadership-admin-collapsible");
   assignmentsDetails.addEventListener("toggle", () => { leadershipAssignmentsOpen = assignmentsDetails.open; });
+  document.querySelectorAll("[data-toggle-week-exclusion]").forEach(button => button.onclick = async () => {
+    const email = button.dataset.toggleWeekExclusion;
+    const exclude = button.dataset.excluded !== "true";
+    button.disabled = true;
+    const { error } = await sb.rpc("set_leadership_rotation_exclusion", {
+      p_week_start: weekStart,
+      p_member_email: email,
+      p_excluded: exclude,
+    });
+    if (error) {
+      alert(`Could not ${exclude ? "remove" : "restore"} ${email} ${exclude ? "from" : "to"} this week's rotation: ${error.message}`);
+      button.disabled = false;
+      return;
+    }
+    leadershipAssignmentsOpen = true;
+    await studentLeadershipUI();
+  });
+  if (ROLE === "admin") await paintRotationSkipQueue(skipRequestsResult.data);
   document.querySelectorAll("[data-save-role]").forEach(button => button.onclick = async () => {
     const row = button.closest("[data-role]"), message = row.querySelector("[data-role-message]");
     const name = row.querySelector("[data-role-name]").value.trim();
@@ -680,6 +720,28 @@ async function paintChatReportQueue(reports) {
     button.disabled = true;
     const { error } = await sb.rpc("review_leadership_chat_report", { p_report_id: button.dataset.reviewReport, p_decision: button.dataset.decision });
     if (error) { alert(`Could not review report: ${error.message}`); button.disabled = false; return; }
+    await studentLeadershipUI();
+  });
+}
+
+async function paintRotationSkipQueue(requests) {
+  const host = document.getElementById("lh-rotation-skip-queue");
+  if (!host) return;
+  if (!requests.length) { host.textContent = "No requests are waiting for review."; return; }
+  host.innerHTML = requests.map(request => `<article class="leadership-review-card">
+    <div><b>${esc(request.member_email)}</b> requested to skip the rotation for the week of ${esc(request.week_start)}.<br>
+      <small>${esc(new Date(request.created_at).toLocaleString())}</small>
+      <p>${esc(request.reason)}</p></div>
+    <div><button class="auth-btn" type="button" data-review-rotation="${request.id}" data-decision="approved">Approve request</button>
+      <button class="auth-btn alt" type="button" data-review-rotation="${request.id}" data-decision="rejected">Reject</button></div></article>`).join("");
+  host.querySelectorAll("[data-review-rotation]").forEach(button => button.onclick = async () => {
+    button.disabled = true;
+    const { error } = await sb.rpc("review_leadership_rotation_skip", {
+      p_request_id: button.dataset.reviewRotation,
+      p_decision: button.dataset.decision,
+    });
+    if (error) { alert(`Could not review rotation request: ${error.message}`); button.disabled = false; return; }
+    leadershipAssignmentsOpen = true;
     await studentLeadershipUI();
   });
 }
