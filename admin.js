@@ -762,22 +762,50 @@ async function paintPrizeClaimQueue(claims) {
 async function alertsUI() {
   const { data: c, error } = await sb.from("notify_config").select("*").eq("id", 1).maybeSingle();
   app.innerHTML = tabs() + `<form id="al" class="admin-schedule"><h3>Email alerts for new photos</h3>
-    <p><small>When students or visitors submit photos, everyone in Student Leadership and all Admins get one email (at most every 5 minutes) saying how many are waiting. Setup steps are at the top of <b>email-alerts.gs</b>.</small></p>
+    <p><small>When students or visitors submit photos, valid @latterup.org addresses in Student Leadership and Admins get one email (at most every 5 minutes) saying how many are waiting. Setup steps are at the top of <b>email-alerts.gs</b>.</small></p>
     ${error ? `<p class="auth-error">${esc(error.message)}, run update-5b-email-alerts.sql first.</p>` : ""}
     <label class="chk"><input type="checkbox" name="enabled" ${c?.enabled ? "checked" : ""}> Send email alerts</label>
     <label>Google Apps Script web app URL<input name="url" value="${esc(c?.webhook_url || "")}" placeholder="https://script.google.com/macros/s/…/exec"></label>
     <label>Secret phrase <small>Must match the SECRET you set in the script</small><input name="secret" type="password" value="${esc(c?.secret || "")}" autocomplete="off"></label>
     <label>Your site address <small>Used for the link inside the email</small><input name="site" value="${esc(c?.site_url || location.origin)}"></label>
-    <div><button class="auth-btn" type="submit">Save</button> <button class="auth-btn alt" type="button" id="al-test">Send a test email</button></div>
+    <div><button class="auth-btn" type="submit">Save</button> <button class="auth-btn alt" type="button" id="al-test">Send a test email</button> <button class="auth-btn alt" type="button" id="al-check">Check delivery status</button></div>
     <small id="al-msg">${c?.last_sent_at ? "Last email requested " + esc(new Date(c.last_sent_at).toLocaleString()) + (c.last_status ? ", Google replied " + c.last_status : "") : ""}</small></form>`;
   wire();
   const f = document.getElementById("al").elements, msg = document.getElementById("al-msg");
   const save = async () => { const { error } = await sb.from("notify_config").update({ enabled: f.enabled.checked, webhook_url: f.url.value.trim(), secret: f.secret.value, site_url: f.site.value.trim().replace(/\/$/, "") }).eq("id", 1); if (error) msg.textContent = "Error: " + error.message; return !error; };
+  const checkStatus = async () => {
+    const { data, error } = await sb.rpc("check_email_alert_status");
+    if (error) {
+      msg.textContent = error.message.includes("check_email_alert_status")
+        ? "Email delivery diagnostics are not installed. Run update-11-email-alert-diagnostics.sql in Supabase."
+        : "Error checking email status: " + error.message;
+      return null;
+    }
+    if (data?.pending) { msg.textContent = data.message; return false; }
+    if (data?.status == null) { msg.textContent = data?.message || "No email response is available yet."; return true; }
+    let response;
+    try { response = JSON.parse(data.body || ""); } catch {}
+    if (data.status < 200 || data.status >= 300 || response?.ok !== true) {
+      msg.textContent = `Apps Script response (HTTP ${data.status}): ${response?.error || data.body || "No response details"}`;
+    } else {
+      msg.textContent = `Apps Script accepted the email (HTTP ${data.status}). Check the recipient inboxes and spam folders.`;
+    }
+    return true;
+  };
   document.getElementById("al").onsubmit = async e => { e.preventDefault(); if (await save()) msg.textContent = "Saved"; };
   document.getElementById("al-test").onclick = async () => {
     msg.textContent = "Sending…"; if (!(await save())) return;
-    const { data, error } = await sb.rpc("send_test_alert"); msg.textContent = error ? "Error: " + error.message : data + " Check your inbox in a minute.";
+    const { data, error } = await sb.rpc("send_test_alert");
+    if (error) { msg.textContent = "Error: " + error.message; return; }
+    msg.textContent = `${data || "Test email queued."} Waiting for Apps Script response…`;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const complete = await checkStatus();
+      if (complete !== false) return;
+    }
+    msg.textContent = "The email request is still processing. Click Check delivery status in a few seconds.";
   };
+  document.getElementById("al-check").onclick = checkStatus;
 }
 async function homeTabUI() {
   app.innerHTML = tabs() + '<div id="hp-portal"></div><div id="hp-home"></div><section class="portal-admin-section"><h3>Frequently asked questions</h3><div id="hp-faq"></div></section>';
