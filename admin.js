@@ -894,9 +894,19 @@ async function paintPrizeClaimQueue(claims) {
 }
 
 async function alertsUI() {
-  const { data: c, error } = await sb.from("notify_config").select("*").eq("id", 1).maybeSingle();
+  const [{ data: c, error }, roleEmailResult] = await Promise.all([
+    sb.from("notify_config").select("*").eq("id", 1).maybeSingle(),
+    sb.from("leadership_role_email_settings").select("*").eq("id", 1).maybeSingle(),
+  ]);
+  const roleEmailSettings = roleEmailResult.data;
+  const roleEmailError = roleEmailResult.error;
   const defaultSubject = "{{photo_count}} waiting for approval";
   const defaultBody = "{{photo_count}} waiting for approval:\n\n{{photo_list}}\n\nReview them here: {{review_url}}";
+  const defaultRoleSubject = "Your Student Leadership roles for this week";
+  const defaultRoleBody = "Hi {{member_name}},\n\nYour Student Leadership role{{role_count}} for the week of {{week_start}}:\n\n{{roles}}\n\nThank you for serving!";
+  const defaultFollowupSubject = "A reminder about your Student Leadership roles";
+  const defaultFollowupBody = "Hi {{member_name}},\n\nThis is a reminder of your Student Leadership role{{role_count}} for the week of {{week_start}}:\n\n{{roles}}\n\nThank you for serving!";
+  const dayOptions = (selected, followRotation = false) => `${followRotation ? `<option value="" ${selected == null ? "selected" : ""}>Follow the role rotation day</option>` : ""}${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((day, index) => `<option value="${index}" ${selected === index ? "selected" : ""}>${day}</option>`).join("")}`;
   app.innerHTML = tabs() + `<form id="al" class="admin-schedule"><h3>Email alerts for new photos</h3>
     <p><small>When students or visitors submit photos, valid @latterup.org addresses in your selected audience get one email (at most every 5 minutes) saying how many are waiting. Test emails go only to your account. Setup steps are at the top of <b>email-alerts.gs</b>.</small></p>
     ${error ? `<p class="auth-error">${esc(error.message)}${/photo_email_subject|photo_email_body/i.test(error.message) ? " Run update-16-photo-email-templates.sql in Supabase." : " Run update-5b-email-alerts.sql first."}</p>` : ""}
@@ -918,6 +928,28 @@ async function alertsUI() {
     <label>Your site address <small>Used for the link inside the email</small><input name="site" value="${esc(c?.site_url || location.origin)}"></label>
     <div><button class="auth-btn" type="submit">Save</button> <button class="auth-btn alt" type="button" id="al-test">Send a test email</button> <button class="auth-btn alt" type="button" id="al-check">Check delivery status</button></div>
     <small id="al-msg">${c?.last_sent_at ? "Last email requested " + esc(new Date(c.last_sent_at).toLocaleString()) + (c.last_status ? ", Google replied " + c.last_status : "") : ""}</small></form>`;
+  const roleEmailHost = document.createElement("section");
+  roleEmailHost.className = "admin-schedule";
+  roleEmailHost.innerHTML = `<h3>Weekly Student Leadership role emails</h3>
+    <p>Emails are sent to members assigned a role for that rotation week. They use the Apps Script URL and secret configured above. Times use Eastern local time (EST/EDT) and follow daylight saving time. Delivery may take a few minutes after the scheduled time.</p>
+    ${roleEmailError ? `<p class="auth-error">Role email settings could not be loaded: ${esc(roleEmailError.message)}. Run update-17-leadership-role-emails.sql in Supabase.</p>` : ""}
+    ${!roleEmailError ? `<form id="role-email-form">
+      <label class="chk"><input type="checkbox" name="enabled" ${roleEmailSettings?.enabled ? "checked" : ""}> Send weekly role emails</label>
+      <h4>Initial email</h4>
+      <label>Send on<select name="initial_day">${dayOptions(roleEmailSettings?.initial_day ?? null, true)}</select></label>
+      <label>Send time (Eastern)<input name="initial_time" type="time" value="${esc((roleEmailSettings?.initial_time || "08:30").slice(0, 5))}" required></label>
+      <label>Email subject<input name="initial_subject" maxlength="200" value="${esc(roleEmailSettings?.initial_subject || defaultRoleSubject)}" required></label>
+      <label>Email message<textarea name="initial_body" rows="6" maxlength="10000" required>${esc(roleEmailSettings?.initial_body || defaultRoleBody)}</textarea></label>
+      <h4>Follow-up email</h4>
+      <label class="chk"><input type="checkbox" name="followup_enabled" ${roleEmailSettings?.followup_enabled !== false ? "checked" : ""}> Send a follow-up email</label>
+      <label>Follow-up day<select name="followup_day">${dayOptions(roleEmailSettings?.followup_day ?? 2)}</select></label>
+      <label>Follow-up time (Eastern)<input name="followup_time" type="time" value="${esc((roleEmailSettings?.followup_time || "08:30").slice(0, 5))}" required></label>
+      <label>Follow-up subject<input name="followup_subject" maxlength="200" value="${esc(roleEmailSettings?.followup_subject || defaultFollowupSubject)}" required></label>
+      <label>Follow-up message<textarea name="followup_body" rows="6" maxlength="10000" required>${esc(roleEmailSettings?.followup_body || defaultFollowupBody)}</textarea></label>
+      <small>Template placeholders: <code>{{member_name}}</code>, <code>{{roles}}</code>, <code>{{role_count}}</code>, and <code>{{week_start}}</code>. The follow-up is scheduled on the next selected weekday after the initial email.</small>
+      <div><button class="auth-btn" type="submit">Save role email settings</button></div><small id="role-email-msg"></small>
+    </form>` : ""}`;
+  document.getElementById("app").appendChild(roleEmailHost);
   wire();
   const f = document.getElementById("al").elements, msg = document.getElementById("al-msg");
   const save = async () => {
@@ -949,6 +981,45 @@ async function alertsUI() {
   document.getElementById("al-template-defaults").onclick = () => {
     f.photo_email_subject.value = defaultSubject;
     f.photo_email_body.value = defaultBody;
+  };
+  const roleEmailForm = document.getElementById("role-email-form");
+  if (roleEmailForm) roleEmailForm.onsubmit = async event => {
+    event.preventDefault();
+    const form = event.target.elements, message = document.getElementById("role-email-msg");
+    const templates = [
+      form.initial_subject.value.trim(), form.initial_body.value.trim(),
+      form.followup_subject.value.trim(), form.followup_body.value.trim(),
+    ];
+    const placeholders = templates.flatMap(template => [...template.matchAll(/\{\{([^}]+)\}\}/g)].map(match => match[1]));
+    const invalidPlaceholder = placeholders.find(name => !["member_name", "roles", "role_count", "week_start"].includes(name));
+    if (templates.some(template => !template)) {
+      message.textContent = "Enter a subject and message for both emails.";
+      return;
+    }
+    if (invalidPlaceholder) {
+      message.textContent = `Unknown placeholder {{${invalidPlaceholder}}}. Use {{member_name}}, {{roles}}, {{role_count}}, or {{week_start}}.`;
+      return;
+    }
+    const button = roleEmailForm.querySelector('[type="submit"]');
+    button.disabled = true;
+    message.textContent = "Saving…";
+    const { data, error: saveError } = await sb.from("leadership_role_email_settings").update({
+      enabled: form.enabled.checked,
+      initial_day: form.initial_day.value === "" ? null : Number(form.initial_day.value),
+      initial_time: form.initial_time.value,
+      initial_subject: templates[0],
+      initial_body: templates[1],
+      followup_enabled: form.followup_enabled.checked,
+      followup_day: Number(form.followup_day.value),
+      followup_time: form.followup_time.value,
+      followup_subject: templates[2],
+      followup_body: templates[3],
+      updated_at: new Date().toISOString(),
+    }).eq("id", 1).select("id").maybeSingle();
+    message.textContent = saveError
+      ? `Could not save role email settings: ${saveError.message}`
+      : data ? "Role email settings saved." : "No role email settings were saved.";
+    button.disabled = false;
   };
   const checkStatus = async () => {
     const { data, error } = await sb.rpc("check_email_alert_status");
