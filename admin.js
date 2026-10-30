@@ -967,9 +967,9 @@ async function alertsUI() {
   const defaultSubject = "{{photo_count}} waiting for approval";
   const defaultBody = "{{photo_count}} waiting for approval:\n\n{{photo_list}}\n\nReview them here: {{review_url}}";
   const defaultRoleSubject = "{{role_name}} — your Student Leadership assignment";
-  const defaultRoleBody = "Hi {{member_name}},\n\nYou are assigned to {{role_name}} for the week of {{week_start}}.\n\nThank you for serving!";
+  const defaultRoleBody = "Hi {{member_name}},\n\nYou are assigned to {{role_name}} for the week of {{week_start}}.\n\nOur next meeting is on {{meeting_date}}.\n\nThank you for serving!";
   const defaultFollowupSubject = "Reminder: {{role_name}} this week";
-  const defaultFollowupBody = "Hi {{member_name}},\n\nThis is a reminder that you are assigned to {{role_name}} for the week of {{week_start}}.\n\nThank you for serving!";
+  const defaultFollowupBody = "Hi {{member_name}},\n\nThis is a reminder that you are assigned to {{role_name}} for the week of {{week_start}}.\n\nOur next meeting is on {{meeting_date}}.\n\nThank you for serving!";
   const dayOptions = (selected, followRotation = false) => `${followRotation ? `<option value="" ${selected == null ? "selected" : ""}>Follow the role rotation day</option>` : ""}${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((day, index) => `<option value="${index}" ${selected === index ? "selected" : ""}>${day}</option>`).join("")}`;
   app.innerHTML = tabs() + `<form id="al" class="admin-schedule"><details class="photo-email-settings">
     <summary><h3>Email alerts for new photos</h3></summary>
@@ -1028,7 +1028,7 @@ async function alertsUI() {
           <small data-role-test-message="followup" role="status"></small>
         </details>`;
       }).join("") || "<p>No chart roles have been added yet.</p>"}</div>
-      <small>Template placeholders (hover over each one for details): <code title="Replaced with the assigned member's display name. Use it as plain text in the subject or message, such as Hi {{member_name}},.">{{member_name}}</code>, <code title="Replaced with the exact name of the assigned Student Leadership chart role. Use it wherever the role and any role-specific instructions or links belong.">{{role_name}}</code>, and <code title="Replaced with the rotation week's date, formatted as Month day, year (for example, November 2, 2026). Use it to identify when the assignment applies.">{{week_start}}</code>. Write the email as plain text: use a short subject, and separate paragraphs with blank lines. Put any link on its own line. Placeholders are replaced when each email is sent; no HTML formatting is needed. Adding a chart role automatically adds it here with default messages.</small>
+      <small>Template placeholders (hover over each one for details): <code title="Replaced with the assigned member's display name. Use it as plain text in the subject or message, such as Hi {{member_name}},.">{{member_name}}</code>, <code title="Replaced with the exact name of the assigned Student Leadership chart role. Use it wherever the role and any role-specific instructions or links belong.">{{role_name}}</code>, <code title="Replaced with the rotation week's date, formatted as Month day, year (for example, November 2, 2026). Use it to identify when the assignment applies.">{{week_start}}</code>, and <code title="Replaced with the meeting date from Admin → Student Leadership, formatted as Month day, year. If no meeting date has been set, it says a date to be announced.">{{meeting_date}}</code>. Write the email as plain text: use a short subject, and separate paragraphs with blank lines. Put any link on its own line. Placeholders are replaced when each email is sent; no HTML formatting is needed. Adding a chart role automatically adds it here with default messages.</small>
       <div><button class="auth-btn" type="submit">Save role email settings</button></div><small id="role-email-msg"></small>
     </form>` : ""}`;
   document.getElementById("app").appendChild(roleEmailHost);
@@ -1073,13 +1073,13 @@ async function alertsUI() {
     const body = row.querySelector(`[data-role-${deliveryType}-body]`).value.trim();
     const placeholders = [...subject.matchAll(/\{\{([^}]+)\}\}/g), ...body.matchAll(/\{\{([^}]+)\}\}/g)]
       .map(match => match[1]);
-    const invalidPlaceholder = placeholders.find(name => !["member_name", "role_name", "week_start"].includes(name));
+    const invalidPlaceholder = placeholders.find(name => !["member_name", "role_name", "week_start", "meeting_date"].includes(name));
     if (!subject || subject.length > 200 || !body || body.length > 10000) {
       message.textContent = "Enter a subject (up to 200 characters) and message (up to 10,000 characters) before sending a test.";
       return;
     }
     if (invalidPlaceholder) {
-      message.textContent = `Unknown placeholder {{${invalidPlaceholder}}}. Use {{member_name}}, {{role_name}}, or {{week_start}}.`;
+      message.textContent = `Unknown placeholder {{${invalidPlaceholder}}}. Use {{member_name}}, {{role_name}}, {{week_start}}, or {{meeting_date}}.`;
       return;
     }
     button.disabled = true;
@@ -1112,9 +1112,9 @@ async function alertsUI() {
         return;
       }
       const placeholders = templates.flatMap(template => [...template.matchAll(/\{\{([^}]+)\}\}/g)].map(match => match[1]));
-      const invalidPlaceholder = placeholders.find(name => !["member_name", "role_name", "week_start"].includes(name));
+      const invalidPlaceholder = placeholders.find(name => !["member_name", "role_name", "week_start", "meeting_date"].includes(name));
       if (invalidPlaceholder) {
-        message.textContent = `Unknown placeholder {{${invalidPlaceholder}}} for ${row.querySelector("summary").textContent}. Use {{member_name}}, {{role_name}}, or {{week_start}}.`;
+        message.textContent = `Unknown placeholder {{${invalidPlaceholder}}} for ${row.querySelector("summary").textContent}. Use {{member_name}}, {{role_name}}, {{week_start}}, or {{meeting_date}}.`;
         return;
       }
       roleTemplates.push({

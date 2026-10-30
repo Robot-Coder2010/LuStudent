@@ -82,11 +82,21 @@
     host.innerHTML = `<section class="leadership-section leadership-chart-section" aria-labelledby="weekly-chart-title">
       <div class="leadership-section-heading"><div><h2 id="weekly-chart-title">Weekly assignments</h2></div></div>
       <p>${esc(reason || "Student Leadership role rotation is paused.")}</p>
-      ${nextMeetingDate ? `<p>Roles will appear Thursday, ${esc(dateLabel(resumeDate))}, before the next meeting on ${esc(dateLabel(nextMeetingDate))}.</p>` : "<p>An admin will add the next meeting date before roles resume.</p>"}
+      ${nextMeetingDate ? `<p><strong>Next meeting:</strong> ${esc(dateLabel(nextMeetingDate))}. Roles will appear Thursday, ${esc(dateLabel(resumeDate))}.</p>` : "<p>An admin will add the next meeting date before roles resume.</p>"}
     </section>`;
   }
 
-  function renderChart(host, members, roles, weekday, weekStart, assignmentPeriodLabel, excludedEmails, userEmail, skipRequest, overrides) {
+  function meetingDateLabel(dateString) {
+    if (!dateString) return "Not scheduled";
+    return new Date(`${dateString}T00:00:00Z`).toLocaleDateString(undefined, {
+      timeZone: "UTC",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  }
+
+  function renderChart(host, members, roles, weekday, weekStart, assignmentPeriodLabel, nextMeetingDate, excludedEmails, userEmail, skipRequest, overrides) {
     const assignments = currentAssignments(members, roles, rotationWeekIndexForDate(weekday, weekStart), excludedEmails, overrides);
     const chartTitle = assignmentPeriodLabel === "the next meeting" ? "Assignments for the next meeting" : "Weekly assignments";
     host.innerHTML = `<section class="leadership-section leadership-chart-section" aria-labelledby="weekly-chart-title">
@@ -106,6 +116,7 @@
               : ""}</div>
         </article>`).join("")}
       </div>
+      <p class="leadership-next-meeting"><strong>Next meeting:</strong> ${esc(meetingDateLabel(nextMeetingDate))}</p>
     </section>`;
   }
 
@@ -187,7 +198,7 @@
       renderPausedChart(chartHost, settings.rotation_pause_reason, settings.next_meeting_date, resumeDate);
     } else {
       renderChart(chartHost, members, rolesResult.data, settings.rotation_weekday, weekStart, assignmentPeriodLabel,
-        excludedEmails, userEmail, skipRequestResult.data, roleOverrides);
+        settings.next_meeting_date, excludedEmails, userEmail, skipRequestResult.data, roleOverrides);
     }
     document.querySelectorAll("[data-request-week-off]").forEach(button => button.onclick = async () => {
       const reason = prompt(`Please explain why you need to be removed from ${assignmentPeriodLabel}'s Student Leadership rotation (up to 500 characters).`);
