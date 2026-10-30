@@ -917,7 +917,8 @@ async function alertsUI() {
   const defaultFollowupSubject = "Reminder: {{role_name}} this week";
   const defaultFollowupBody = "Hi {{member_name}},\n\nThis is a reminder that you are assigned to {{role_name}} for the week of {{week_start}}.\n\nThank you for serving!";
   const dayOptions = (selected, followRotation = false) => `${followRotation ? `<option value="" ${selected == null ? "selected" : ""}>Follow the role rotation day</option>` : ""}${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((day, index) => `<option value="${index}" ${selected === index ? "selected" : ""}>${day}</option>`).join("")}`;
-  app.innerHTML = tabs() + `<form id="al" class="admin-schedule"><h3>Email alerts for new photos</h3>
+  app.innerHTML = tabs() + `<form id="al" class="admin-schedule"><details class="photo-email-settings">
+    <summary><h3>Email alerts for new photos</h3></summary>
     <p><small>When students or visitors submit photos, valid @latterup.org addresses in your selected audience get one email (at most every 5 minutes) saying how many are waiting. Test emails go only to your account. Setup steps are at the top of <b>email-alerts.gs</b>.</small></p>
     ${error ? `<p class="auth-error">${esc(error.message)}${/photo_email_subject|photo_email_body/i.test(error.message) ? " Run update-16-photo-email-templates.sql in Supabase." : " Run update-5b-email-alerts.sql first."}</p>` : ""}
     <label class="chk"><input type="checkbox" name="enabled" ${c?.enabled ? "checked" : ""}> Send email alerts</label>
@@ -937,7 +938,8 @@ async function alertsUI() {
     <label>Secret phrase <small>Must match the SECRET you set in the script</small><input name="secret" type="password" value="${esc(c?.secret || "")}" autocomplete="off"></label>
     <label>Your site address <small>Used for the link inside the email</small><input name="site" value="${esc(c?.site_url || location.origin)}"></label>
     <div><button class="auth-btn" type="submit">Save</button> <button class="auth-btn alt" type="button" id="al-test">Send a test email</button> <button class="auth-btn alt" type="button" id="al-check">Check delivery status</button></div>
-    <small id="al-msg">${c?.last_sent_at ? "Last email requested " + esc(new Date(c.last_sent_at).toLocaleString()) + (c.last_status ? ", Google replied " + c.last_status : "") : ""}</small></form>`;
+    <small id="al-msg">${c?.last_sent_at ? "Last email requested " + esc(new Date(c.last_sent_at).toLocaleString()) + (c.last_status ? ", Google replied " + c.last_status : "") : ""}</small>
+  </details></form>`;
   const roleEmailHost = document.createElement("section");
   roleEmailHost.className = "admin-schedule";
   roleEmailHost.innerHTML = `<h3>Weekly Student Leadership role emails</h3>
