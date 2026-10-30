@@ -895,9 +895,11 @@ async function paintPrizeClaimQueue(claims) {
 
 async function alertsUI() {
   const { data: c, error } = await sb.from("notify_config").select("*").eq("id", 1).maybeSingle();
+  const defaultSubject = "{{photo_count}} waiting for approval";
+  const defaultBody = "{{photo_count}} waiting for approval:\n\n{{photo_list}}\n\nReview them here: {{review_url}}";
   app.innerHTML = tabs() + `<form id="al" class="admin-schedule"><h3>Email alerts for new photos</h3>
     <p><small>When students or visitors submit photos, valid @latterup.org addresses in your selected audience get one email (at most every 5 minutes) saying how many are waiting. Test emails go only to your account. Setup steps are at the top of <b>email-alerts.gs</b>.</small></p>
-    ${error ? `<p class="auth-error">${esc(error.message)}, run update-5b-email-alerts.sql first.</p>` : ""}
+    ${error ? `<p class="auth-error">${esc(error.message)}${/photo_email_subject|photo_email_body/i.test(error.message) ? " Run update-16-photo-email-templates.sql in Supabase." : " Run update-5b-email-alerts.sql first."}</p>` : ""}
     <label class="chk"><input type="checkbox" name="enabled" ${c?.enabled ? "checked" : ""}> Send email alerts</label>
     <label>Photo Challenge notification recipients
       <select name="photo_alert_audience">
@@ -906,6 +908,11 @@ async function alertsUI() {
         <option value="off" ${c?.photo_alert_audience === "off" ? "selected" : ""}>Turn off Photo Challenge notifications</option>
       </select>
     </label>
+    <label>Email subject<input name="photo_email_subject" maxlength="200" value="${esc(c?.photo_email_subject || defaultSubject)}" required></label>
+    <label>Email message<textarea name="photo_email_body" rows="8" maxlength="10000" required>${esc(c?.photo_email_body || defaultBody)}</textarea>
+      <small>Available placeholders: <code>{{photo_count}}</code> (for example, “2 new photos”), <code>{{count}}</code> (number only), <code>{{photo_list}}</code> (names and themes), and <code>{{review_url}}</code>.</small>
+    </label>
+    <button class="auth-btn alt" type="button" id="al-template-defaults">Restore default message</button>
     <label>Google Apps Script web app URL<input name="url" value="${esc(c?.webhook_url || "")}" placeholder="https://script.google.com/macros/s/…/exec"></label>
     <label>Secret phrase <small>Must match the SECRET you set in the script</small><input name="secret" type="password" value="${esc(c?.secret || "")}" autocomplete="off"></label>
     <label>Your site address <small>Used for the link inside the email</small><input name="site" value="${esc(c?.site_url || location.origin)}"></label>
@@ -914,15 +921,34 @@ async function alertsUI() {
   wire();
   const f = document.getElementById("al").elements, msg = document.getElementById("al-msg");
   const save = async () => {
-    const { error } = await sb.from("notify_config").update({
+    const subject = f.photo_email_subject.value.trim(), body = f.photo_email_body.value.trim();
+    const placeholders = [...subject.matchAll(/\{\{([^}]+)\}\}/g), ...body.matchAll(/\{\{([^}]+)\}\}/g)]
+      .map(match => match[1]);
+    const invalidPlaceholder = placeholders.find(name => !["photo_count", "count", "photo_list", "review_url"].includes(name));
+    if (!subject || subject.length > 200 || !body || body.length > 10000) {
+      msg.textContent = "Enter an email subject (up to 200 characters) and message (up to 10,000 characters).";
+      return false;
+    }
+    if (invalidPlaceholder) {
+      msg.textContent = `Unknown placeholder {{${invalidPlaceholder}}}. Use {{photo_count}}, {{count}}, {{photo_list}}, or {{review_url}}.`;
+      return false;
+    }
+    const { data: saved, error } = await sb.from("notify_config").update({
       enabled: f.enabled.checked,
       photo_alert_audience: f.photo_alert_audience.value,
+      photo_email_subject: subject,
+      photo_email_body: body,
       webhook_url: f.url.value.trim(),
       secret: f.secret.value,
       site_url: f.site.value.trim().replace(/\/$/, ""),
-    }).eq("id", 1);
+    }).eq("id", 1).select("id").maybeSingle();
     if (error) msg.textContent = `Error: ${error.message}${error.message.includes("photo_alert_audience") ? " Run update-12-leadership-role-overrides-and-photo-alerts.sql in Supabase." : ""}`;
-    return !error;
+    else if (!saved) msg.textContent = "No email alert settings were saved.";
+    return !error && !!saved;
+  };
+  document.getElementById("al-template-defaults").onclick = () => {
+    f.photo_email_subject.value = defaultSubject;
+    f.photo_email_body.value = defaultBody;
   };
   const checkStatus = async () => {
     const { data, error } = await sb.rpc("check_email_alert_status");
