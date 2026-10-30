@@ -7,15 +7,14 @@
   };
   const weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-  function rotationWeekIndex(weekday) {
-    const now = new Date();
-    const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-    const thisWeekday = new Date(todayUtc).getUTCDay();
-    const daysSinceRotation = (thisWeekday - weekday + 7) % 7;
-    const lastRotation = new Date(todayUtc - daysSinceRotation * 86400000);
+  function rotationWeekIndexForDate(weekday, dateString) {
+    const date = Date.parse(`${dateString}T00:00:00Z`);
+    const dateWeekday = new Date(date).getUTCDay();
+    const daysSinceRotation = (dateWeekday - weekday + 7) % 7;
+    const lastRotation = date - daysSinceRotation * 86400000;
     const firstRotation = Date.UTC(2024, 0, 7) + weekday * 86400000;
-    if (lastRotation.getTime() < firstRotation) return 0;
-    return Math.floor((lastRotation.getTime() - firstRotation) / (7 * 86400000));
+    if (lastRotation < firstRotation) return 0;
+    return Math.floor((lastRotation - firstRotation) / (7 * 86400000));
   }
 
   function rotationWeekStart(weekday) {
@@ -24,6 +23,29 @@
     const thisWeekday = new Date(todayUtc).getUTCDay();
     const daysSinceRotation = (thisWeekday - weekday + 7) % 7;
     return new Date(todayUtc - daysSinceRotation * 86400000).toISOString().slice(0, 10);
+  }
+
+  function rotationWeekStartForDate(weekday, dateString) {
+    const date = Date.parse(`${dateString}T00:00:00Z`);
+    const daysSinceRotation = (new Date(date).getUTCDay() - weekday + 7) % 7;
+    return new Date(date - daysSinceRotation * 86400000).toISOString().slice(0, 10);
+  }
+
+  function easternToday() {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+    const part = name => parts.find(item => item.type === name).value;
+    return `${part("year")}-${part("month")}-${part("day")}`;
+  }
+
+  function thursdayBefore(dateString) {
+    const date = Date.parse(`${dateString}T00:00:00Z`);
+    const daysSinceThursday = ((new Date(date).getUTCDay() - 4 + 7) % 7) || 7;
+    return new Date(date - daysSinceThursday * 86400000).toISOString().slice(0, 10);
   }
 
   function currentAssignments(members, roles, weekIndex, excludedEmails, overrides) {
@@ -50,11 +72,26 @@
     });
   }
 
-  function renderChart(host, members, roles, weekday, excludedEmails, userEmail, skipRequest, overrides) {
-    const assignments = currentAssignments(members, roles, rotationWeekIndex(weekday), excludedEmails, overrides);
+  function renderPausedChart(host, reason, nextMeetingDate, resumeDate) {
+    const dateLabel = dateString => new Date(`${dateString}T00:00:00Z`).toLocaleDateString(undefined, {
+      timeZone: "UTC",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    host.innerHTML = `<section class="leadership-section leadership-chart-section" aria-labelledby="weekly-chart-title">
+      <div class="leadership-section-heading"><div><h2 id="weekly-chart-title">Weekly assignments</h2></div></div>
+      <p>${esc(reason || "Student Leadership role rotation is paused.")}</p>
+      ${nextMeetingDate ? `<p>Roles will appear Thursday, ${esc(dateLabel(resumeDate))}, before the next meeting on ${esc(dateLabel(nextMeetingDate))}.</p>` : "<p>An admin will add the next meeting date before roles resume.</p>"}
+    </section>`;
+  }
+
+  function renderChart(host, members, roles, weekday, weekStart, assignmentPeriodLabel, excludedEmails, userEmail, skipRequest, overrides) {
+    const assignments = currentAssignments(members, roles, rotationWeekIndexForDate(weekday, weekStart), excludedEmails, overrides);
+    const chartTitle = assignmentPeriodLabel === "the next meeting" ? "Assignments for the next meeting" : "Weekly assignments";
     host.innerHTML = `<section class="leadership-section leadership-chart-section" aria-labelledby="weekly-chart-title">
       <div class="leadership-section-heading">
-        <div><h2 id="weekly-chart-title">Weekly assignments</h2></div>
+        <div><h2 id="weekly-chart-title">${chartTitle}</h2></div>
         <span class="leadership-rotation-badge">${LUIcon("clock", 17)} Rotates ${weekdayNames[weekday]}</span>
       </div>
       <div class="leadership-chart" aria-label="Weekly Student Leadership roles">
@@ -65,7 +102,7 @@
             ${member && member.email.toLowerCase() === userEmail && !excludedEmails.has(userEmail)
               ? skipRequest?.status
                 ? `<small class="leadership-skip-status">Week-off request ${esc(skipRequest.status)}${skipRequest.status === "rejected" ? ". Contact an admin if you still need help." : "."}</small>`
-                : `<button class="auth-btn alt leadership-skip-request" type="button" data-request-week-off>Request this week off</button>`
+                : `<button class="auth-btn alt leadership-skip-request" type="button" data-request-week-off>Request ${esc(assignmentPeriodLabel)} off</button>`
               : ""}</div>
         </article>`).join("")}
       </div>
@@ -86,8 +123,8 @@
       return;
     }
 
-    const settingsResult = await sb.from("leadership_hub_settings").select("rotation_weekday,approval_points,visibility").eq("id", 1).single();
-    if (settingsResult.error) return showError(app, `The Student Leadership hub could not load: ${settingsResult.error.message}. Ask an admin to run update-10-student-leadership-hub.sql.`);
+    const settingsResult = await sb.from("leadership_hub_settings").select("rotation_weekday,approval_points,visibility,rotation_paused,rotation_pause_reason,next_meeting_date").eq("id", 1).single();
+    if (settingsResult.error) return showError(app, `The Student Leadership hub could not load: ${settingsResult.error.message}. Ask an admin to run update-10-student-leadership-hub.sql and update-19-leadership-rotation-pause.sql.`);
     const mayViewHub = settingsResult.data.visibility === "leaders_admins"
       || (settingsResult.data.visibility === "admins" && role === "admin");
     if (!mayViewHub) {
@@ -95,7 +132,18 @@
       return;
     }
 
-    const weekStart = rotationWeekStart(settingsResult.data.rotation_weekday);
+    const settings = settingsResult.data;
+    const today = easternToday();
+    const resumeDate = settings.next_meeting_date ? thursdayBefore(settings.next_meeting_date) : null;
+    const rotationPausedNow = settings.rotation_paused && (!resumeDate || today < resumeDate);
+    const currentWeekStart = rotationWeekStart(settings.rotation_weekday);
+    const meetingWeekStart = settings.next_meeting_date
+      ? rotationWeekStartForDate(settings.rotation_weekday, settings.next_meeting_date)
+      : currentWeekStart;
+    const useMeetingWeek = settings.rotation_paused && resumeDate && today >= resumeDate
+      && today <= settings.next_meeting_date && meetingWeekStart > currentWeekStart;
+    const weekStart = useMeetingWeek ? meetingWeekStart : currentWeekStart;
+    const assignmentPeriodLabel = weekStart === currentWeekStart ? "this week" : "the next meeting";
     const userEmail = (session.user.email || "").toLowerCase();
     const [membersResult, rolesResult, assignmentsResult, exclusionsResult, skipRequestResult, overridesResult] = await Promise.all([
       sb.from("leadership_chart_members").select("email,display_name,in_cycle,sort_order").order("sort_order").order("display_name"),
@@ -134,10 +182,15 @@
         <div id="leadership-prizes" class="leadership-prize-grid"></div>
         <div class="leadership-claims"><h3>My prize requests</h3><div id="my-prize-claims"></div></div></section>`;
     const excludedEmails = new Set(exclusionsResult.data.map(item => item.member_email.toLowerCase()));
-    renderChart(document.getElementById("weekly-role-chart"), members, rolesResult.data,
-      settingsResult.data.rotation_weekday, excludedEmails, userEmail, skipRequestResult.data, roleOverrides);
+    const chartHost = document.getElementById("weekly-role-chart");
+    if (rotationPausedNow) {
+      renderPausedChart(chartHost, settings.rotation_pause_reason, settings.next_meeting_date, resumeDate);
+    } else {
+      renderChart(chartHost, members, rolesResult.data, settings.rotation_weekday, weekStart, assignmentPeriodLabel,
+        excludedEmails, userEmail, skipRequestResult.data, roleOverrides);
+    }
     document.querySelectorAll("[data-request-week-off]").forEach(button => button.onclick = async () => {
-      const reason = prompt("Please explain why you need to be removed from this week's Student Leadership rotation (up to 500 characters).");
+      const reason = prompt(`Please explain why you need to be removed from ${assignmentPeriodLabel}'s Student Leadership rotation (up to 500 characters).`);
       if (reason === null) return;
       if (!reason.trim() || reason.trim().length > 500) {
         alert("Enter a reason between 1 and 500 characters.");

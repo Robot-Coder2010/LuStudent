@@ -19,6 +19,35 @@ const rotationWeekStart = weekday => {
   const daysSinceRotation = (new Date(todayUtc).getUTCDay() - weekday + 7) % 7;
   return new Date(todayUtc - daysSinceRotation * 86400000).toISOString().slice(0, 10);
 };
+const dateInEastern = () => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const part = name => parts.find(item => item.type === name).value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
+};
+const rotationWeekStartForDate = (weekday, dateString) => {
+  const date = Date.parse(`${dateString}T00:00:00Z`);
+  const daysSinceRotation = (new Date(date).getUTCDay() - weekday + 7) % 7;
+  return new Date(date - daysSinceRotation * 86400000).toISOString().slice(0, 10);
+};
+const thursdayBeforeMeeting = dateString => {
+  const date = Date.parse(`${dateString}T00:00:00Z`);
+  const daysSinceThursday = ((new Date(date).getUTCDay() - 4 + 7) % 7) || 7;
+  return new Date(date - daysSinceThursday * 86400000).toISOString().slice(0, 10);
+};
+const leadershipAssignmentWeekStart = settings => {
+  const currentWeek = rotationWeekStart(settings.rotation_weekday);
+  if (!settings.rotation_paused || !settings.next_meeting_date) return currentWeek;
+  const today = dateInEastern(), resumeDate = thursdayBeforeMeeting(settings.next_meeting_date);
+  const meetingWeek = rotationWeekStartForDate(settings.rotation_weekday, settings.next_meeting_date);
+  return today >= resumeDate && today <= settings.next_meeting_date && meetingWeek > currentWeek
+    ? meetingWeek
+    : currentWeek;
+};
 const loc = v => { const d = new Date(v); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16); };
 const isValidTimeZone = value => {
   try { new Intl.DateTimeFormat("en-US", { timeZone: value }).format(); return true; }
@@ -543,12 +572,15 @@ async function studentLeadershipUI() {
   ]);
   const failure = [settingsResult, membersResult, rolesResult, assignmentResult, reportsResult, prizesResult, claimsResult].find(result => result.error);
   if (failure) {
-    app.innerHTML = tabs() + `<p class="auth-error">Student Leadership settings could not load: ${esc(failure.error.message)}. Run update-10-student-leadership-hub.sql in Supabase SQL Editor.</p>`;
+    app.innerHTML = tabs() + `<p class="auth-error">Student Leadership settings could not load: ${esc(failure.error.message)}. Run update-10-student-leadership-hub.sql and update-19-leadership-rotation-pause.sql in Supabase SQL Editor.</p>`;
     wire();
     return;
   }
   const settings = settingsResult.data, members = membersResult.data, roles = rolesResult.data;
-  const weekStart = rotationWeekStart(settings.rotation_weekday);
+  const weekStart = leadershipAssignmentWeekStart(settings);
+  const assignmentWeekLabel = weekStart === rotationWeekStart(settings.rotation_weekday)
+    ? "this week"
+    : "the next meeting";
   const [exclusionsResult, skipRequestsResult, overridesResult] = await Promise.all([
     sb.from("leadership_rotation_exclusions").select("member_email").eq("week_start", weekStart),
     sb.from("leadership_rotation_skip_requests").select("id,week_start,member_email,reason,created_at").eq("status", "pending").order("week_start").order("created_at"),
@@ -580,6 +612,14 @@ async function studentLeadershipUI() {
       <label>Change role assignments on (UTC)
         <select name="rotation_weekday">${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((day, index) => `<option value="${index}" ${settings.rotation_weekday === index ? "selected" : ""}>${day}</option>`).join("")}</select>
       </label>
+      <label class="chk"><input name="rotation_paused" type="checkbox" ${settings.rotation_paused ? "checked" : ""}> Pause role rotation</label>
+      <label>Reason for the pause
+        <textarea name="rotation_pause_reason" rows="3" maxlength="500" placeholder="For example: Student Leadership is on winter break.">${esc(settings.rotation_pause_reason || "")}</textarea>
+      </label>
+      <label>Next meeting date
+        <input name="next_meeting_date" type="date" value="${esc(settings.next_meeting_date || "")}">
+        <small>When rotation is paused, roles will appear on the Thursday before this meeting. The pause reason appears on the SL page until then.</small>
+      </label>
       <div><button class="auth-btn" type="submit">Save settings</button></div><small id="lh-settings-message"></small>
     </form>
     <details class="leadership-admin-section leadership-admin-collapsible" ${leadershipAssignmentsOpen ? "open" : ""}>
@@ -600,13 +640,13 @@ async function studentLeadershipUI() {
       </section>
       <button class="auth-btn alt" type="button" id="lh-shuffle-roles">Shuffle member rotation order</button>
       ${ROLE === "admin" ? `<section class="leadership-role-management">
-        <h4>Assign a role for this week</h4>
-        <p>These assignments override this week's chart only. They do not change anyone's rotation order; clear an assignment to return that role to the rotation.</p>
+        <h4>Assign a role for ${assignmentWeekLabel}</h4>
+        <p>These assignments override the chart for ${assignmentWeekLabel} only. They do not change anyone's rotation order; clear an assignment to return that role to the rotation.</p>
         <div id="lh-weekly-role-overrides">${roles.map(role => `<div class="leadership-role-admin-row" data-week-role="${role.id}">
           <label>${esc(role.name)}<select data-week-member><option value="">Use rotating assignment</option>
             ${members.map(member => `<option value="${esc(member.email)}" ${overridesByRole.get(role.id) === member.email ? "selected" : ""}>${esc(member.display_name)} (${esc(member.email)})</option>`).join("")}
           </select></label>
-          <button class="auth-btn alt" type="button" data-save-week-role>Save this week's assignment</button><small data-week-role-message></small>
+          <button class="auth-btn alt" type="button" data-save-week-role>Save assignment</button><small data-week-role-message></small>
         </div>`).join("") || "<p>Add a chart role first.</p>"}</div>
       </section>
       <section class="leadership-role-management">
@@ -622,13 +662,13 @@ async function studentLeadershipUI() {
         <label class="chk"><input data-in-cycle type="checkbox" ${member.in_cycle ? "checked" : ""}> Include in weekly rotation</label>
         <fieldset><legend>Eligible roles</legend>${roles.map(role => `<label class="chk"><input data-member-role type="checkbox" value="${role.id}" ${(roleIdsByMember.get(member.email) || []).includes(role.id) ? "checked" : ""}> ${esc(role.name)}</label>`).join("") || "<small>Run update-10-student-leadership-hub.sql to add the chart roles.</small>"}</fieldset>
         <button class="auth-btn alt" type="button" data-toggle-week-exclusion="${esc(member.email)}" data-excluded="${excludedEmails.has(member.email.toLowerCase())}">
-          ${excludedEmails.has(member.email.toLowerCase()) ? "Restore this week's rotation" : "Remove from this week's rotation"}
+          ${excludedEmails.has(member.email.toLowerCase()) ? `Restore from ${assignmentWeekLabel}'s rotation` : `Remove from ${assignmentWeekLabel}'s rotation`}
         </button>
         <button class="auth-btn" type="button" data-save-member>Save member</button><small data-member-message></small>
       </article>`).join("") || "<p>No Student Leadership members have been added yet.</p>"}</div>
     </details>
     <div class="leadership-admin-review-grid">
-      ${ROLE === "admin" ? `<section class="leadership-admin-section"><h3>Requests to skip this week's rotation</h3><div id="lh-rotation-skip-queue"></div></section>` : ""}
+      ${ROLE === "admin" ? `<section class="leadership-admin-section"><h3>Requests to skip ${assignmentWeekLabel}'s rotation</h3><div id="lh-rotation-skip-queue"></div></section>` : ""}
       <section class="leadership-admin-section"><h3>Chat reports awaiting approval</h3><p>These reports help Student Leadership members engage with the student body and help everyone feel included. Review a screenshot of a conversation and approve it to award points.</p><div id="lh-report-queue"></div></section>
     </div>
     <section class="leadership-admin-section"><h3>Prize catalog</h3>
@@ -664,7 +704,7 @@ async function studentLeadershipUI() {
       p_member_email: row.querySelector("[data-week-member]").value || null,
     });
     if (error) {
-      message.textContent = `Could not save this week's assignment: ${error.message}`;
+      message.textContent = `Could not save the assignment for ${assignmentWeekLabel}: ${error.message}`;
       button.disabled = false;
       return;
     }
@@ -701,7 +741,7 @@ async function studentLeadershipUI() {
       p_excluded: exclude,
     });
     if (error) {
-      alert(`Could not ${exclude ? "remove" : "restore"} ${email} ${exclude ? "from" : "to"} this week's rotation: ${error.message}`);
+      alert(`Could not ${exclude ? "remove" : "restore"} ${email} ${exclude ? "from" : "to"} ${assignmentWeekLabel}'s rotation: ${error.message}`);
       button.disabled = false;
       return;
     }
@@ -755,12 +795,26 @@ async function studentLeadershipUI() {
   const settingsForm = document.getElementById("lh-settings"), settingsMessage = document.getElementById("lh-settings-message");
   settingsForm.onsubmit = async event => {
     event.preventDefault();
-    const form = event.target.elements;
+    const form = event.target.elements, paused = form.rotation_paused.checked;
+    const reason = form.rotation_pause_reason.value.trim(), nextMeetingDate = form.next_meeting_date.value;
+    if (paused && (!reason || !nextMeetingDate)) {
+      settingsMessage.textContent = "When pausing rotation, enter a reason and the next meeting date.";
+      return;
+    }
+    if (paused && nextMeetingDate < dateInEastern()) {
+      settingsMessage.textContent = "The next meeting date must be today or a future date.";
+      return;
+    }
     const { error } = await sb.from("leadership_hub_settings").update({
       visibility: form.visibility.value,
       rotation_weekday: Number(form.rotation_weekday.value),
+      rotation_paused: paused,
+      rotation_pause_reason: reason || null,
+      next_meeting_date: nextMeetingDate || null,
     }).eq("id", 1);
-    settingsMessage.textContent = error ? `Could not save settings: ${error.message}` : "Settings saved.";
+    settingsMessage.textContent = error
+      ? `Could not save settings: ${error.message}${/rotation_paused|rotation_pause_reason|next_meeting_date/i.test(error.message) ? " Run update-19-leadership-rotation-pause.sql in Supabase SQL Editor." : ""}`
+      : "Settings saved.";
   };
   document.getElementById("lh-points-settings").onsubmit = async event => {
     event.preventDefault();
@@ -953,20 +1007,25 @@ async function alertsUI() {
         <label>Send time (Eastern)<input name="initial_time" type="time" value="${esc((roleEmailSettings?.initial_time || "08:30").slice(0, 5))}" required></label>
         <label>Email subject<input name="initial_subject" maxlength="200" value="${esc(roleEmailSettings?.initial_subject || defaultRoleSubject)}" required></label>
         <label>Email message<textarea name="initial_body" rows="6" maxlength="10000" required>${esc(roleEmailSettings?.initial_body || defaultRoleBody)}</textarea></label>
+        <h4>Follow-up email</h4>
+        <label class="chk"><input type="checkbox" name="followup_enabled" ${roleEmailSettings?.followup_enabled !== false ? "checked" : ""}> Send a follow-up email</label>
+        <label>Follow-up day<select name="followup_day">${dayOptions(roleEmailSettings?.followup_day ?? 2)}</select></label>
+        <label>Follow-up time (Eastern)<input name="followup_time" type="time" value="${esc((roleEmailSettings?.followup_time || "08:30").slice(0, 5))}" required></label>
       </details>
-      <h4>Follow-up email</h4>
-      <label class="chk"><input type="checkbox" name="followup_enabled" ${roleEmailSettings?.followup_enabled !== false ? "checked" : ""}> Send a follow-up email</label>
-      <label>Follow-up day<select name="followup_day">${dayOptions(roleEmailSettings?.followup_day ?? 2)}</select></label>
-      <label>Follow-up time (Eastern)<input name="followup_time" type="time" value="${esc((roleEmailSettings?.followup_time || "08:30").slice(0, 5))}" required></label>
       <p>Each role below has its own initial and follow-up email. A member assigned multiple roles receives a separate email for each role.</p>
+      <p><small>Test buttons send the current text for that role to your signed-in email only. They do not change the weekly schedule.</small></p>
       <div id="role-email-templates">${(rolesResult.data || []).map(role => {
         const template = roleTemplatesById.get(role.id) || {};
         return `<details class="leadership-role-management" open data-role-email="${role.id}">
           <summary>${esc(role.name)}</summary>
           <label>Initial email subject<input data-role-initial-subject maxlength="200" value="${esc(template.initial_subject || defaultRoleSubject)}" required></label>
           <label>Initial email message<textarea data-role-initial-body rows="5" maxlength="10000" required>${esc(template.initial_body || defaultRoleBody)}</textarea></label>
+          <button class="auth-btn alt" type="button" data-role-test="initial">Send initial email test to my email</button>
+          <small data-role-test-message="initial" role="status"></small>
           <label>Follow-up email subject<input data-role-followup-subject maxlength="200" value="${esc(template.followup_subject || defaultFollowupSubject)}" required></label>
           <label>Follow-up email message<textarea data-role-followup-body rows="5" maxlength="10000" required>${esc(template.followup_body || defaultFollowupBody)}</textarea></label>
+          <button class="auth-btn alt" type="button" data-role-test="followup">Send follow-up test to my email</button>
+          <small data-role-test-message="followup" role="status"></small>
         </details>`;
       }).join("") || "<p>No chart roles have been added yet.</p>"}</div>
       <small>Template placeholders (hover over each one for details): <code title="Replaced with the assigned member's display name. Use it as plain text in the subject or message, such as Hi {{member_name}},.">{{member_name}}</code>, <code title="Replaced with the exact name of the assigned Student Leadership chart role. Use it wherever the role and any role-specific instructions or links belong.">{{role_name}}</code>, and <code title="Replaced with the rotation week's date, formatted as Month day, year (for example, November 2, 2026). Use it to identify when the assignment applies.">{{week_start}}</code>. Write the email as plain text: use a short subject, and separate paragraphs with blank lines. Put any link on its own line. Placeholders are replaced when each email is sent; no HTML formatting is needed. Adding a chart role automatically adds it here with default messages.</small>
@@ -1006,6 +1065,36 @@ async function alertsUI() {
     f.photo_email_body.value = defaultBody;
   };
   const roleEmailForm = document.getElementById("role-email-form");
+  if (roleEmailForm) roleEmailForm.querySelectorAll("[data-role-test]").forEach(button => button.onclick = async () => {
+    const row = button.closest("[data-role-email]");
+    const deliveryType = button.dataset.roleTest;
+    const message = row.querySelector(`[data-role-test-message="${deliveryType}"]`);
+    const subject = row.querySelector(`[data-role-${deliveryType}-subject]`).value.trim();
+    const body = row.querySelector(`[data-role-${deliveryType}-body]`).value.trim();
+    const placeholders = [...subject.matchAll(/\{\{([^}]+)\}\}/g), ...body.matchAll(/\{\{([^}]+)\}\}/g)]
+      .map(match => match[1]);
+    const invalidPlaceholder = placeholders.find(name => !["member_name", "role_name", "week_start"].includes(name));
+    if (!subject || subject.length > 200 || !body || body.length > 10000) {
+      message.textContent = "Enter a subject (up to 200 characters) and message (up to 10,000 characters) before sending a test.";
+      return;
+    }
+    if (invalidPlaceholder) {
+      message.textContent = `Unknown placeholder {{${invalidPlaceholder}}}. Use {{member_name}}, {{role_name}}, or {{week_start}}.`;
+      return;
+    }
+    button.disabled = true;
+    message.textContent = "Queuing test email to your signed-in address…";
+    const { data, error: testError } = await sb.rpc("send_leadership_role_test_email", {
+      p_role_id: row.dataset.roleEmail,
+      p_delivery_type: deliveryType,
+      p_subject: subject,
+      p_body: body,
+    });
+    message.textContent = testError
+      ? `Could not send test email: ${testError.message}${testError.message.includes("send_leadership_role_test_email") ? " Run update-20-leadership-role-test-email.sql in Supabase SQL Editor." : ""}`
+      : `Test email queued to your signed-in email. Request ID: ${data}.`;
+    button.disabled = false;
+  });
   if (roleEmailForm) roleEmailForm.onsubmit = async event => {
     event.preventDefault();
     const form = event.target.elements, message = document.getElementById("role-email-msg");
