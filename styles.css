@@ -1086,3 +1086,95 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 .pub-mark-img { display: block; width: 72px; height: 72px; border-radius: 18px; }
 
 .role-note { margin: -.5rem 0 1rem; padding: .6rem .9rem; border-radius: 12px; background: var(--tint); }
+
+/* Admin workspace polish: calmer hierarchy, clearer cards, and a more useful email-alerts screen */
+.adm { max-width: 1240px; min-height: 70vh; }
+.adm nav { position: sticky; top: 8px; z-index: 20; padding: 10px; margin: 0 0 26px; border: 1px solid var(--stone-line); border-radius: 15px; background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 8px 26px rgba(17,26,68,.06); backdrop-filter: blur(12px); }
+.adm nav .auth-btn { border-radius: 10px; padding: .65rem .9rem; transition: background .18s ease, transform .18s ease, border-color .18s ease; }
+.adm nav .auth-btn:hover { transform: translateY(-1px); }
+.adm h1,.adm h2,.adm h3 { letter-spacing: -.025em; }
+.adm .row { padding: 1rem 1.1rem; margin: 8px 0; border: 1px solid var(--stone-line); border-radius: 12px; background: var(--surface); }
+.adm form:not(.portal-admin-section form) { border-radius: 16px; padding: clamp(1rem, 2.5vw, 1.6rem); border-color: var(--stone-line); box-shadow: 0 10px 30px rgba(17,26,68,.045); }
+.adm .auth-btn { border-radius: 9px; padding: .65rem 1rem; }
+.admin-page-intro { position:relative; overflow:hidden; margin: 0 0 22px; padding: clamp(1.4rem,3vw,2.25rem); border: 1px solid var(--stone-line); border-radius: 22px; background: linear-gradient(125deg, var(--surface) 0%, var(--tint) 100%); }
+.admin-page-intro:after { content:""; position:absolute; width:190px; height:190px; right:-48px; top:-75px; border:28px solid color-mix(in srgb,var(--gold) 25%,transparent); border-radius:50%; pointer-events:none; }
+.admin-page-kicker,.admin-section-kicker { display:block; color:var(--slate); font-size:.72rem; font-weight:850; letter-spacing:.15em; }
+.admin-page-intro h1 { margin:.35rem 0 .45rem; font:750 clamp(1.9rem,4vw,2.65rem)/1.08 var(--font-body); color:var(--navy); }
+.admin-page-intro p { max-width:650px; margin:0; color:var(--stone); line-height:1.65; }
+.admin-feature-pills { display:flex; flex-wrap:wrap; gap:8px; margin-top:1.2rem; }
+.admin-feature-pills span { display:inline-flex; padding:6px 10px; border:1px solid var(--stone-line); border-radius:99px; background:var(--surface); color:var(--navy); font-size:.78rem; font-weight:700; }
+.admin-email-card { margin:18px 0 24px; padding:clamp(1rem,2.5vw,1.6rem); border:1px solid var(--stone-line); border-radius:18px; background:var(--surface); box-shadow:0 12px 34px rgba(17,26,68,.05); }
+.adm form.admin-email-card { gap:1rem; }
+.photo-email-settings>summary { display:flex; align-items:center; gap:12px; list-style:none; padding:0 0 1rem; border-bottom:1px solid var(--stone-line); }
+.photo-email-settings>summary::-webkit-details-marker { display:none; }
+.photo-email-settings>summary:before { content:"✉"; display:grid; place-items:center; flex:0 0 44px; width:44px; height:44px; border-radius:14px; background:var(--tint); color:var(--navy); font-size:1.25rem; }
+.photo-email-settings>summary h3 { margin:0; font-size:1.2rem; }
+.photo-email-settings>summary:after { content:"＋"; margin-left:auto; color:var(--slate); font-size:1.2rem; }
+.photo-email-settings[open]>summary:after { content:"−"; }
+.admin-email-card p { color:var(--stone); line-height:1.65; }
+.admin-email-card label:not(.chk) { color:var(--navy); font-size:.9rem; font-weight:750; }
+.admin-email-card input:not([type=checkbox]),.admin-email-card textarea,.admin-email-card select { margin-top:4px; padding: .8rem .9rem; border:1px solid var(--stone-line); border-radius:10px; background:var(--cream); color:var(--navy); transition:border-color .18s ease, box-shadow .18s ease; }
+.admin-email-card input:focus,.admin-email-card textarea:focus,.admin-email-card select:focus { outline:none; border-color:var(--slate); box-shadow:0 0 0 3px color-mix(in srgb,var(--slate) 18%,transparent); }
+.admin-email-card textarea { line-height:1.55; resize:vertical; }
+.admin-email-card .chk { display:flex!important; align-items:center; gap:10px; padding:12px 14px; border:1px solid var(--stone-line); border-radius:11px; background:var(--cream); color:var(--navy); }
+.admin-email-card input[type=checkbox] { width:18px; height:18px; accent-color:var(--slate); }
+.admin-email-card code { padding:2px 5px; border-radius:5px; background:var(--tint); color:var(--navy); font-size:.82em; }
+.admin-email-card button:disabled { opacity:.55; cursor:wait; }
+.admin-section-heading { display:flex; align-items:center; gap:13px; margin-bottom:.5rem; }
+.admin-section-icon { display:grid; place-items:center; flex:0 0 46px; width:46px; height:46px; border-radius:15px; background:var(--tint); color:var(--navy); font-size:1.3rem; }
+.admin-section-heading h2 { margin:.25rem 0 0; color:var(--navy); font:750 clamp(1.25rem,2.5vw,1.6rem)/1.2 var(--font-body); }
+.role-email-card>p { margin:.7rem 0; }
+.role-email-card #role-email-form { margin:1rem 0 0; padding:0; border:0; box-shadow:none; background:transparent; }
+#role-email-templates { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,390px),1fr)); gap:14px; margin:.5rem 0; }
+#role-email-templates .leadership-role-management { min-width:0; padding:1rem; border:1px solid var(--stone-line); border-radius:14px; background:var(--cream); }
+#role-email-templates .leadership-role-management>summary { padding:.2rem 0 .8rem; margin-bottom:.9rem; border-bottom:1px solid var(--stone-line); color:var(--navy); font-weight:800; font-size:1rem; cursor:pointer; }
+#role-email-templates .leadership-role-management label { margin:.8rem 0; }
+#role-email-templates .leadership-role-management textarea { min-height:115px; }
+#al-msg,#role-email-msg,[data-role-test-message] { display:block; padding:.5rem 0; line-height:1.5; overflow-wrap:anywhere; }
+@media(max-width:640px) { .adm { padding-top:1rem; } .adm nav { position:static; gap:7px; padding:8px; } .adm nav .auth-btn { flex:1 1 auto; text-align:center; } .admin-page-intro:after { opacity:.55; } .admin-feature-pills { gap:6px; } .admin-feature-pills span { font-size:.72rem; } .adm .row { align-items:flex-start; flex-direction:column; } .adm .row>span:last-child { display:flex; flex-wrap:wrap; gap:6px; } }
+[data-theme=dark] .admin-page-intro { background:linear-gradient(125deg,var(--surface),var(--tint)); }
+[data-theme=dark] .admin-email-card { box-shadow:0 12px 34px rgba(0,0,0,.14); }
+
+
+/* Email alerts layout: progressive disclosure keeps the page manageable */
+.admin-email-card { min-width:0; }
+.admin-email-card details > summary { cursor:pointer; }
+.admin-email-card details > summary:focus-visible { outline:2px solid var(--slate); outline-offset:4px; border-radius:6px; }
+.role-email-card { padding:clamp(1rem,2.5vw,1.7rem); }
+.role-email-card #role-email-form { display:flex; flex-direction:column; gap:1rem; }
+.role-email-initial { padding:1rem; border:1px solid var(--stone-line); border-radius:14px; background:color-mix(in srgb,var(--tint) 35%,var(--surface)); }
+.role-email-initial > summary { display:flex; align-items:center; gap:10px; list-style:none; font-weight:800; color:var(--navy); }
+.role-email-initial > summary::-webkit-details-marker { display:none; }
+.role-email-initial > summary:before { content:"⚙"; display:grid; place-items:center; width:34px; height:34px; border-radius:10px; background:var(--surface); color:var(--navy); }
+.role-email-initial > summary:after { content:"＋"; margin-left:auto; color:var(--slate); }
+.role-email-initial[open] > summary:after { content:"−"; }
+.role-email-initial > label:not(.chk) { max-width:100%; }
+.role-template-intro { padding:.2rem 0 .25rem; }
+.role-template-intro h3 { margin:0 0 .3rem; font-size:1.05rem; color:var(--navy); }
+.role-template-intro p { margin:.25rem 0; }
+#role-email-templates .leadership-role-management { align-self:start; transition:border-color .18s ease,box-shadow .18s ease; }
+#role-email-templates .leadership-role-management[open] { border-color:color-mix(in srgb,var(--slate) 55%,var(--stone-line)); box-shadow:0 5px 18px rgba(17,26,68,.05); }
+#role-email-templates .leadership-role-management > summary { display:flex; align-items:center; gap:10px; cursor:pointer; list-style:none; margin:0; padding:.2rem 0; border:0; }
+#role-email-templates .leadership-role-management > summary::-webkit-details-marker { display:none; }
+#role-email-templates .leadership-role-management > summary:after { content:"＋"; margin-left:auto; color:var(--slate); font-size:1.1rem; }
+#role-email-templates .leadership-role-management[open] > summary:after { content:"−"; }
+#role-email-templates .leadership-role-management:not([open]) { background:var(--surface); }
+#role-email-templates .leadership-role-management:not([open]) > summary { margin:0; padding:.35rem 0; }
+#role-email-templates .leadership-role-management label { display:block; }
+#role-email-templates .leadership-role-management button { margin:.25rem 0; }
+#role-email-templates .leadership-role-management small { display:block; overflow-wrap:anywhere; }
+#role-email-msg { border-radius:8px; }
+@media(min-width:850px) {
+  .role-email-initial[open] { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 18px; }
+  .role-email-initial[open] > summary { grid-column:1/-1; }
+  .role-email-initial[open] > label { min-width:0; }
+  .role-email-initial[open] > label:has(textarea),.role-email-initial[open] > h4,.role-email-initial[open] > .chk { grid-column:1/-1; }
+}
+@media(max-width:640px) {
+  .admin-email-card { padding:1rem; }
+  #role-email-templates { grid-template-columns:minmax(0,1fr); }
+  #role-email-templates .leadership-role-management { padding:.85rem; }
+  .role-email-initial { padding:.85rem; }
+}
+[data-theme=dark] .role-email-initial { background:color-mix(in srgb,var(--tint) 20%,var(--surface)); }
+[data-theme=dark] #role-email-templates .leadership-role-management:not([open]) { background:var(--surface); }

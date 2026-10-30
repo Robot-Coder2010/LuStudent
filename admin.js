@@ -971,7 +971,7 @@ async function alertsUI() {
   const defaultFollowupSubject = "Reminder: {{role_name}} this week";
   const defaultFollowupBody = "Hi {{member_name}},\n\nThis is a reminder that you are assigned to {{role_name}} for the week of {{week_start}}.\n\nOur next meeting is on {{meeting_date}}.\n\nThank you for serving!";
   const dayOptions = (selected, followRotation = false) => `${followRotation ? `<option value="" ${selected == null ? "selected" : ""}>Follow the role rotation day</option>` : ""}${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((day, index) => `<option value="${index}" ${selected === index ? "selected" : ""}>${day}</option>`).join("")}`;
-  app.innerHTML = tabs() + `<form id="al" class="admin-schedule"><details class="photo-email-settings">
+  app.innerHTML = tabs() + `<header class="admin-page-intro"><span class="admin-page-kicker">MESSAGING CENTER</span><h1>Email alerts</h1><p>Manage Photo Challenge notifications and the weekly Student Leadership emails from one place.</p><div class="admin-feature-pills"><span>Photo submissions</span><span>Weekly assignments</span><span>Test delivery</span></div></header><form id="al" class="admin-schedule admin-email-card"><details class="photo-email-settings" open>
     <summary><h3>Email alerts for new photos</h3></summary>
     <p><small>When students or visitors submit photos, valid @latterup.org addresses in your selected audience get one email (at most every 5 minutes) saying how many are waiting. Test emails go only to your account. Setup steps are at the top of <b>email-alerts.gs</b>.</small></p>
     ${error ? `<p class="auth-error">${esc(error.message)}${/photo_email_subject|photo_email_body/i.test(error.message) ? " Run update-16-photo-email-templates.sql in Supabase." : " Run update-5b-email-alerts.sql first."}</p>` : ""}
@@ -995,8 +995,8 @@ async function alertsUI() {
     <small id="al-msg">${c?.last_sent_at ? "Last email requested " + esc(new Date(c.last_sent_at).toLocaleString()) + (c.last_status ? ", Google replied " + c.last_status : "") : ""}</small>
   </details></form>`;
   const roleEmailHost = document.createElement("section");
-  roleEmailHost.className = "admin-schedule";
-  roleEmailHost.innerHTML = `<h3>Weekly Student Leadership role emails</h3>
+  roleEmailHost.className = "admin-schedule admin-email-card role-email-card";
+  roleEmailHost.innerHTML = `<div class="admin-section-heading"><span class="admin-section-icon" aria-hidden="true">✉</span><div><span class="admin-section-kicker">AUTOMATED MESSAGES</span><h2>Weekly Student Leadership role emails</h2></div></div>
     <p>Emails are sent to members assigned a role for that rotation week. They use the Apps Script URL and secret configured above. Times use Eastern local time (EST/EDT) and follow daylight saving time. Delivery may take a few minutes after the scheduled time.</p>
     ${roleEmailError ? `<p class="auth-error">Role email settings could not be loaded: ${esc(roleEmailError.message)}. ${roleEmailSetupHint}</p>` : ""}
     ${!roleEmailError ? `<form id="role-email-form">
@@ -1012,11 +1012,10 @@ async function alertsUI() {
         <label>Follow-up day<select name="followup_day">${dayOptions(roleEmailSettings?.followup_day ?? 2)}</select></label>
         <label>Follow-up time (Eastern)<input name="followup_time" type="time" value="${esc((roleEmailSettings?.followup_time || "08:30").slice(0, 5))}" required></label>
       </details>
-      <p>Each role below has its own initial and follow-up email. A member assigned multiple roles receives a separate email for each role.</p>
-      <p><small>Test buttons send the current text for that role to your signed-in email only. They do not change the weekly schedule.</small></p>
+      <div class="role-template-intro"><h3>Role-specific email templates</h3><p>Choose a role to edit its initial and follow-up messages. Keeping these collapsed makes the schedule easier to scan.</p><small>Test emails go only to your signed-in email and do not change the weekly schedule.</small></div>
       <div id="role-email-templates">${(rolesResult.data || []).map(role => {
         const template = roleTemplatesById.get(role.id) || {};
-        return `<details class="leadership-role-management" open data-role-email="${role.id}">
+        return `<details class="leadership-role-management" data-role-email="${role.id}">
           <summary>${esc(role.name)}</summary>
           <label>Initial email subject<input data-role-initial-subject maxlength="200" value="${esc(template.initial_subject || defaultRoleSubject)}" required></label>
           <label>Initial email message<textarea data-role-initial-body rows="5" maxlength="10000" required>${esc(template.initial_body || defaultRoleBody)}</textarea></label>
