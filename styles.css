@@ -1240,3 +1240,26 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
   .adm .leadership-list-row { align-items:flex-start; }
 }
 @media(prefers-reduced-motion:reduce) { .adm .auth-btn, .adm .home-section-edit, .adm .portal-tile-edit { transition:none; } }
+
+/* Admin editing: keep each editor attached to the item being changed. */
+.adm .admin-edit-item { margin: 10px 0; min-width: 0; }
+.adm .admin-inline-edit:empty { display:none; }
+.adm .admin-inline-edit:not(:empty) { margin: 8px 0 18px; padding: clamp(14px,2vw,22px); border: 1px solid var(--stone-line); border-radius: 14px; background: var(--surface); }
+.adm .admin-inline-edit form { width:100%; min-width:0; box-sizing:border-box; }
+.adm .admin-inline-edit label, .adm .admin-inline-edit input, .adm .admin-inline-edit textarea, .adm .admin-inline-edit select { max-width:100%; box-sizing:border-box; }
+.adm .student-admin-tools { display:grid; grid-template-columns:minmax(0,1fr) minmax(240px, .85fr); align-items:end; gap:16px; margin:20px 0 10px; padding:16px; border:1px solid var(--stone-line); border-radius:14px; background:var(--surface); }
+.adm .student-admin-tools h3 { margin:0; }
+.adm .student-admin-tools label { margin:0; min-width:0; }
+.adm .student-admin-danger-zone { margin-top:30px; padding:16px; border:1px solid color-mix(in srgb,#b42318 30%,var(--stone-line)); border-radius:14px; background:color-mix(in srgb,#b42318 4%,var(--surface)); }
+.adm .student-admin-danger-zone h4 { margin:0; }
+.adm #role-email-templates { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.adm #role-email-templates .leadership-role-management { min-width:0; width:100%; box-sizing:border-box; }
+.adm #role-email-templates .leadership-role-management input,
+.adm #role-email-templates .leadership-role-management textarea,
+.adm #role-email-templates .leadership-role-management select { display:block; width:100%; max-width:100%; min-width:0; box-sizing:border-box; }
+.adm #role-email-templates .leadership-role-management textarea { resize:vertical; }
+.adm .admin-email-card details:not([open]) > :not(summary) { display:none; }
+@media(max-width:760px) {
+  .adm .student-admin-tools { grid-template-columns:minmax(0,1fr); }
+  .adm #role-email-templates { grid-template-columns:minmax(0,1fr); }
+}

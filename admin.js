@@ -176,7 +176,7 @@ async function listUI(table, host) {
   host.innerHTML = (host === app ? tabs() : "") + (listError ? `<p class="auth-error">Could not load ${esc(t.label.toLowerCase())}: ${esc(listError.message)}</p>` : "") + `<button class="auth-btn" id="new">+ Add new</button><div id="list">` +
     rows.map(r => {
       const canManage = ROLE === "admin" || (table === "announcements" && ROLE === "leader" && r.created_by === session?.user?.id);
-      return `<div class="row"><span>${esc(r[t.title])} <small>${esc(r.date || (r.starts_at ? new Date(r.starts_at).toLocaleString() : ""))}</small>${r.publish_at && new Date(r.publish_at) > new Date() ? ` <span class="sched-badge">Scheduled for ${esc(new Date(r.publish_at).toLocaleString())}</span>` : ""}</span><span>${table === "themes" ? `<button class="auth-btn alt" data-ph="${r.id}">Photos</button> ` : ""}${canManage ? `<button class="auth-btn alt" data-e="${r.id}">Edit</button> <button class="auth-btn alt" data-d="${r.id}">Delete</button>` : ""}</span></div>`;
+      return `<div class="admin-edit-item"><div class="row"><span>${esc(r[t.title])} <small>${esc(r.date || (r.starts_at ? new Date(r.starts_at).toLocaleString() : ""))}</small>${r.publish_at && new Date(r.publish_at) > new Date() ? ` <span class="sched-badge">Scheduled for ${esc(new Date(r.publish_at).toLocaleString())}</span>` : ""}</span><span>${table === "themes" ? `<button class="auth-btn alt" data-ph="${r.id}">Photos</button> ` : ""}${canManage ? `<button class="auth-btn alt" data-e="${r.id}">Edit</button> <button class="auth-btn alt" data-d="${r.id}">Delete</button>` : ""}</span></div><div id="item-form-${r.id}" class="admin-inline-edit"></div></div>`;
     }).join("") + "</div><div id=\"form\"></div>" + (table === "themes" ? '<div id="photos-section"></div>' : "") + scheduleBlock;
   if (host === app) wire();
   const scheduleForm = document.getElementById("theme-schedule");
@@ -190,7 +190,7 @@ async function listUI(table, host) {
   if (table === "themes") photosSection();
   document.getElementById("new").onclick = () => form(null);
   host.querySelectorAll("[data-ph]").forEach(b => b.onclick = async () => { sel = b.dataset.ph; await photosSection(); document.getElementById("photos-section").scrollIntoView({ behavior: "smooth" }); });
-  host.querySelectorAll("[data-e]").forEach(b => b.onclick = () => form(rows.find(r => r.id === b.dataset.e)));
+  host.querySelectorAll("[data-e]").forEach(b => b.onclick = () => { const row = rows.find(r => r.id === b.dataset.e); form(row, document.getElementById(`item-form-${b.dataset.e}`)); });
   host.querySelectorAll("[data-d]").forEach(b => b.onclick = async () => {
     if (!confirm("Delete this permanently?")) return;
     const { data, error } = await sb.from(table).delete().eq("id", b.dataset.d).select("id").maybeSingle();
@@ -204,7 +204,7 @@ async function listUI(table, host) {
   });
 }
 
-async function form(row) {
+async function form(row, target = document.getElementById("form")) {
   const t = T[LT]; let d = row || {};
   let suggestionError = "";
   if (!row && LT === "themes") {
@@ -212,7 +212,7 @@ async function form(row) {
     if (error) suggestionError = "Could not suggest dates: " + error.message;
     else if (data?.[0]) d = { starts_at: data[0].starts_at, ends_at: data[0].ends_at };
   }
-  const el = document.getElementById("form");
+  const el = target || document.getElementById("form");
   el.innerHTML = `<form><h3>${row ? "Edit" : "New"} ${t.label}</h3>${suggestionError ? `<p class="auth-error">${esc(suggestionError)}</p>` : ""}` + t.f.map(([k, lab, type, acc]) => {
     const v = d[k] ?? "";
     if (type === "textarea") return `<label>${lab}<textarea name="${k}" rows="4">${esc(v)}</textarea></label>`;
@@ -971,7 +971,7 @@ async function alertsUI() {
   const defaultFollowupSubject = "Reminder: {{role_name}} this week";
   const defaultFollowupBody = "Hi {{member_name}},\n\nThis is a reminder that you are assigned to {{role_name}} for the week of {{week_start}}.\n\nOur next meeting is on {{meeting_date}}.\n\nThank you for serving!";
   const dayOptions = (selected, followRotation = false) => `${followRotation ? `<option value="" ${selected == null ? "selected" : ""}>Follow the role rotation day</option>` : ""}${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((day, index) => `<option value="${index}" ${selected === index ? "selected" : ""}>${day}</option>`).join("")}`;
-  app.innerHTML = tabs() + `<header class="admin-page-intro"><span class="admin-page-kicker">MESSAGING CENTER</span><h1>Email alerts</h1><p>Manage Photo Challenge notifications and the weekly Student Leadership emails from one place.</p><div class="admin-feature-pills"><span>Photo submissions</span><span>Weekly assignments</span><span>Test delivery</span></div></header><form id="al" class="admin-schedule admin-email-card"><details class="photo-email-settings" open>
+  app.innerHTML = tabs() + `<header class="admin-page-intro"><span class="admin-page-kicker">MESSAGING CENTER</span><h1>Email alerts</h1><p>Manage Photo Challenge notifications and the weekly Student Leadership emails from one place.</p><div class="admin-feature-pills"><span>Photo submissions</span><span>Weekly assignments</span><span>Test delivery</span></div></header><form id="al" class="admin-schedule admin-email-card"><details class="photo-email-settings">
     <summary><h3>Email alerts for new photos</h3></summary>
     <p><small>When students or visitors submit photos, valid @latterup.org addresses in your selected audience get one email (at most every 5 minutes) saying how many are waiting. Test emails go only to your account. Setup steps are at the top of <b>email-alerts.gs</b>.</small></p>
     ${error ? `<p class="auth-error">${esc(error.message)}${/photo_email_subject|photo_email_body/i.test(error.message) ? " Run update-16-photo-email-templates.sql in Supabase." : " Run update-5b-email-alerts.sql first."}</p>` : ""}
@@ -1219,8 +1219,7 @@ async function studentsUI(notice = "") {
   app.innerHTML = tabs() + `<h3>Students</h3><p><small>Everyone who has signed in to the portal, plus Student Leadership members added by email before their first sign-in. New accounts are created automatically when they sign in with Google. Removing a student permanently deletes their account; they can create it again by signing in with Google.</small></p>${loadError ? `<p class="auth-error">${esc(loadError.message)}, check update-6-students-list.sql and update-5a-leadership-team.sql.</p>` : ""}
     ${notice ? `<p class="role-note" role="status">${esc(notice)}</p>` : ""}
     ${ROLE === "admin" ? `<form id="st-add-leader"><h4>Add Student Leadership access before first sign-in</h4><label>Email address<input name="email" type="email" placeholder="name@latterup.org" required></label><button class="auth-btn" type="submit">Add Student Leadership member</button><small id="st-add-leader-message"></small></form>` : ""}
-    <p><button class="auth-btn alt" type="button" id="st-remove-all" ${loadError || removableCount === 0 ? "disabled" : ""}>Remove all students (${removableCount})</button></p>
-    <label>Search<input id="st-q" type="search" placeholder="Type a name or email"></label><p><small id="st-count"></small></p><div id="st-list"></div>`;
+    <div class="student-admin-tools"><h3>Student directory</h3><label>Search students<input id="st-q" type="search" placeholder="Type a name or email"></label></div><p><small id="st-count"></small></p><div id="st-list"></div><div class="student-admin-danger-zone"><h4>Bulk actions</h4><p><small>These actions affect student accounts and cannot be undone.</small></p><button class="auth-btn alt" type="button" id="st-remove-all" ${loadError || removableCount === 0 ? "disabled" : ""}>Remove all students (${removableCount})</button></div>`;
   wire();
   const list = document.getElementById("st-list"), count = document.getElementById("st-count");
   const paint = () => {
