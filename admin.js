@@ -945,11 +945,13 @@ async function alertsUI() {
     ${roleEmailError ? `<p class="auth-error">Role email settings could not be loaded: ${esc(roleEmailError.message)}. ${roleEmailSetupHint}</p>` : ""}
     ${!roleEmailError ? `<form id="role-email-form">
       <label class="chk"><input type="checkbox" name="enabled" ${roleEmailSettings?.enabled ? "checked" : ""}> Send weekly role emails</label>
-      <h4>Initial email</h4>
-      <label>Send on<select name="initial_day">${dayOptions(roleEmailSettings?.initial_day ?? null, true)}</select></label>
-      <label>Send time (Eastern)<input name="initial_time" type="time" value="${esc((roleEmailSettings?.initial_time || "08:30").slice(0, 5))}" required></label>
-      <label>Email subject<input name="initial_subject" maxlength="200" value="${esc(roleEmailSettings?.initial_subject || defaultRoleSubject)}" required></label>
-      <label>Email message<textarea name="initial_body" rows="6" maxlength="10000" required>${esc(roleEmailSettings?.initial_body || defaultRoleBody)}</textarea></label>
+      <details class="role-email-initial">
+        <summary><h4>Initial email</h4></summary>
+        <label>Send on<select name="initial_day">${dayOptions(roleEmailSettings?.initial_day ?? null, true)}</select></label>
+        <label>Send time (Eastern)<input name="initial_time" type="time" value="${esc((roleEmailSettings?.initial_time || "08:30").slice(0, 5))}" required></label>
+        <label>Email subject<input name="initial_subject" maxlength="200" value="${esc(roleEmailSettings?.initial_subject || defaultRoleSubject)}" required></label>
+        <label>Email message<textarea name="initial_body" rows="6" maxlength="10000" required>${esc(roleEmailSettings?.initial_body || defaultRoleBody)}</textarea></label>
+      </details>
       <h4>Follow-up email</h4>
       <label class="chk"><input type="checkbox" name="followup_enabled" ${roleEmailSettings?.followup_enabled !== false ? "checked" : ""}> Send a follow-up email</label>
       <label>Follow-up day<select name="followup_day">${dayOptions(roleEmailSettings?.followup_day ?? 2)}</select></label>
@@ -965,7 +967,7 @@ async function alertsUI() {
           <label>Follow-up email message<textarea data-role-followup-body rows="5" maxlength="10000" required>${esc(template.followup_body || defaultFollowupBody)}</textarea></label>
         </details>`;
       }).join("") || "<p>No chart roles have been added yet.</p>"}</div>
-      <small>Template placeholders: <code>{{member_name}}</code>, <code>{{role_name}}</code>, and <code>{{week_start}}</code>. Adding a chart role automatically adds it here with default messages.</small>
+      <small>Template placeholders (hover over each one for details): <code title="Replaced with the assigned member's display name. Use it as plain text in the subject or message, such as Hi {{member_name}},.">{{member_name}}</code>, <code title="Replaced with the exact name of the assigned Student Leadership chart role. Use it wherever the role and any role-specific instructions or links belong.">{{role_name}}</code>, and <code title="Replaced with the rotation week's date, formatted as Month day, year (for example, November 2, 2026). Use it to identify when the assignment applies.">{{week_start}}</code>. Write the email as plain text: use a short subject, and separate paragraphs with blank lines. Put any link on its own line. Placeholders are replaced when each email is sent; no HTML formatting is needed. Adding a chart role automatically adds it here with default messages.</small>
       <div><button class="auth-btn" type="submit">Save role email settings</button></div><small id="role-email-msg"></small>
     </form>` : ""}`;
   document.getElementById("app").appendChild(roleEmailHost);

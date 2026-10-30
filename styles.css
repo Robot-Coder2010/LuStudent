@@ -792,6 +792,9 @@ input,textarea,select{background:var(--surface);color:var(--navy)}
 /* Admin photo theme schedule grouped with theme management */
 .admin-schedule { margin: 1.25rem 0 1.5rem; padding: 1rem; border: 1px solid var(--stone-line); border-radius: 14px; background: var(--surface); }
 .admin-schedule h3 { margin-top: 0; }
+.role-email-initial>summary { color: var(--navy); cursor: pointer; }
+.role-email-initial>summary h4 { display: inline-block; margin: .25rem 0; }
+.role-email-initial[open]>summary { margin-bottom: .5rem; }
 
 
 /* Admin-managed announcement banner and portal tile layout */
