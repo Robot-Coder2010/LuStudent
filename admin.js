@@ -894,18 +894,28 @@ async function paintPrizeClaimQueue(claims) {
 }
 
 async function alertsUI() {
-  const [{ data: c, error }, roleEmailResult] = await Promise.all([
+  const [{ data: c, error }, roleEmailResult, rolesResult, roleTemplatesResult] = await Promise.all([
     sb.from("notify_config").select("*").eq("id", 1).maybeSingle(),
     sb.from("leadership_role_email_settings").select("*").eq("id", 1).maybeSingle(),
+    sb.from("leadership_chart_roles").select("id,name").order("sort_order").order("name"),
+    sb.from("leadership_role_email_templates").select("*").order("created_at"),
   ]);
   const roleEmailSettings = roleEmailResult.data;
-  const roleEmailError = roleEmailResult.error;
+  const roleEmailError = roleEmailResult.error || rolesResult.error || roleTemplatesResult.error;
+  const roleEmailSetupHint = roleTemplatesResult.error
+    ? "Run update-18-role-specific-email-templates.sql in Supabase."
+    : roleEmailResult.error
+      ? "Run update-17-leadership-role-emails.sql in Supabase."
+      : rolesResult.error
+        ? "Run update-10-student-leadership-hub.sql in Supabase."
+        : "";
+  const roleTemplatesById = new Map((roleTemplatesResult.data || []).map(template => [template.role_id, template]));
   const defaultSubject = "{{photo_count}} waiting for approval";
   const defaultBody = "{{photo_count}} waiting for approval:\n\n{{photo_list}}\n\nReview them here: {{review_url}}";
-  const defaultRoleSubject = "Your Student Leadership roles for this week";
-  const defaultRoleBody = "Hi {{member_name}},\n\nYour Student Leadership role{{role_count}} for the week of {{week_start}}:\n\n{{roles}}\n\nThank you for serving!";
-  const defaultFollowupSubject = "A reminder about your Student Leadership roles";
-  const defaultFollowupBody = "Hi {{member_name}},\n\nThis is a reminder of your Student Leadership role{{role_count}} for the week of {{week_start}}:\n\n{{roles}}\n\nThank you for serving!";
+  const defaultRoleSubject = "{{role_name}} — your Student Leadership assignment";
+  const defaultRoleBody = "Hi {{member_name}},\n\nYou are assigned to {{role_name}} for the week of {{week_start}}.\n\nThank you for serving!";
+  const defaultFollowupSubject = "Reminder: {{role_name}} this week";
+  const defaultFollowupBody = "Hi {{member_name}},\n\nThis is a reminder that you are assigned to {{role_name}} for the week of {{week_start}}.\n\nThank you for serving!";
   const dayOptions = (selected, followRotation = false) => `${followRotation ? `<option value="" ${selected == null ? "selected" : ""}>Follow the role rotation day</option>` : ""}${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((day, index) => `<option value="${index}" ${selected === index ? "selected" : ""}>${day}</option>`).join("")}`;
   app.innerHTML = tabs() + `<form id="al" class="admin-schedule"><h3>Email alerts for new photos</h3>
     <p><small>When students or visitors submit photos, valid @latterup.org addresses in your selected audience get one email (at most every 5 minutes) saying how many are waiting. Test emails go only to your account. Setup steps are at the top of <b>email-alerts.gs</b>.</small></p>
@@ -932,7 +942,7 @@ async function alertsUI() {
   roleEmailHost.className = "admin-schedule";
   roleEmailHost.innerHTML = `<h3>Weekly Student Leadership role emails</h3>
     <p>Emails are sent to members assigned a role for that rotation week. They use the Apps Script URL and secret configured above. Times use Eastern local time (EST/EDT) and follow daylight saving time. Delivery may take a few minutes after the scheduled time.</p>
-    ${roleEmailError ? `<p class="auth-error">Role email settings could not be loaded: ${esc(roleEmailError.message)}. Run update-17-leadership-role-emails.sql in Supabase.</p>` : ""}
+    ${roleEmailError ? `<p class="auth-error">Role email settings could not be loaded: ${esc(roleEmailError.message)}. ${roleEmailSetupHint}</p>` : ""}
     ${!roleEmailError ? `<form id="role-email-form">
       <label class="chk"><input type="checkbox" name="enabled" ${roleEmailSettings?.enabled ? "checked" : ""}> Send weekly role emails</label>
       <h4>Initial email</h4>
@@ -944,9 +954,18 @@ async function alertsUI() {
       <label class="chk"><input type="checkbox" name="followup_enabled" ${roleEmailSettings?.followup_enabled !== false ? "checked" : ""}> Send a follow-up email</label>
       <label>Follow-up day<select name="followup_day">${dayOptions(roleEmailSettings?.followup_day ?? 2)}</select></label>
       <label>Follow-up time (Eastern)<input name="followup_time" type="time" value="${esc((roleEmailSettings?.followup_time || "08:30").slice(0, 5))}" required></label>
-      <label>Follow-up subject<input name="followup_subject" maxlength="200" value="${esc(roleEmailSettings?.followup_subject || defaultFollowupSubject)}" required></label>
-      <label>Follow-up message<textarea name="followup_body" rows="6" maxlength="10000" required>${esc(roleEmailSettings?.followup_body || defaultFollowupBody)}</textarea></label>
-      <small>Template placeholders: <code>{{member_name}}</code>, <code>{{roles}}</code>, <code>{{role_count}}</code>, and <code>{{week_start}}</code>. The follow-up is scheduled on the next selected weekday after the initial email.</small>
+      <p>Each role below has its own initial and follow-up email. A member assigned multiple roles receives a separate email for each role.</p>
+      <div id="role-email-templates">${(rolesResult.data || []).map(role => {
+        const template = roleTemplatesById.get(role.id) || {};
+        return `<details class="leadership-role-management" open data-role-email="${role.id}">
+          <summary>${esc(role.name)}</summary>
+          <label>Initial email subject<input data-role-initial-subject maxlength="200" value="${esc(template.initial_subject || defaultRoleSubject)}" required></label>
+          <label>Initial email message<textarea data-role-initial-body rows="5" maxlength="10000" required>${esc(template.initial_body || defaultRoleBody)}</textarea></label>
+          <label>Follow-up email subject<input data-role-followup-subject maxlength="200" value="${esc(template.followup_subject || defaultFollowupSubject)}" required></label>
+          <label>Follow-up email message<textarea data-role-followup-body rows="5" maxlength="10000" required>${esc(template.followup_body || defaultFollowupBody)}</textarea></label>
+        </details>`;
+      }).join("") || "<p>No chart roles have been added yet.</p>"}</div>
+      <small>Template placeholders: <code>{{member_name}}</code>, <code>{{role_name}}</code>, and <code>{{week_start}}</code>. Adding a chart role automatically adds it here with default messages.</small>
       <div><button class="auth-btn" type="submit">Save role email settings</button></div><small id="role-email-msg"></small>
     </form>` : ""}`;
   document.getElementById("app").appendChild(roleEmailHost);
@@ -986,39 +1005,59 @@ async function alertsUI() {
   if (roleEmailForm) roleEmailForm.onsubmit = async event => {
     event.preventDefault();
     const form = event.target.elements, message = document.getElementById("role-email-msg");
-    const templates = [
-      form.initial_subject.value.trim(), form.initial_body.value.trim(),
-      form.followup_subject.value.trim(), form.followup_body.value.trim(),
-    ];
-    const placeholders = templates.flatMap(template => [...template.matchAll(/\{\{([^}]+)\}\}/g)].map(match => match[1]));
-    const invalidPlaceholder = placeholders.find(name => !["member_name", "roles", "role_count", "week_start"].includes(name));
-    if (templates.some(template => !template)) {
-      message.textContent = "Enter a subject and message for both emails.";
-      return;
+    const roleTemplateRows = [...roleEmailForm.querySelectorAll("[data-role-email]")];
+    const roleTemplates = [];
+    for (const row of roleTemplateRows) {
+      const templates = [
+        row.querySelector("[data-role-initial-subject]").value.trim(),
+        row.querySelector("[data-role-initial-body]").value.trim(),
+        row.querySelector("[data-role-followup-subject]").value.trim(),
+        row.querySelector("[data-role-followup-body]").value.trim(),
+      ];
+      if (templates.some(template => !template)) {
+        message.textContent = `Enter all four email fields for ${row.querySelector("summary").textContent}.`;
+        return;
+      }
+      const placeholders = templates.flatMap(template => [...template.matchAll(/\{\{([^}]+)\}\}/g)].map(match => match[1]));
+      const invalidPlaceholder = placeholders.find(name => !["member_name", "role_name", "week_start"].includes(name));
+      if (invalidPlaceholder) {
+        message.textContent = `Unknown placeholder {{${invalidPlaceholder}}} for ${row.querySelector("summary").textContent}. Use {{member_name}}, {{role_name}}, or {{week_start}}.`;
+        return;
+      }
+      roleTemplates.push({
+        role_id: row.dataset.roleEmail,
+        initial_subject: templates[0],
+        initial_body: templates[1],
+        followup_subject: templates[2],
+        followup_body: templates[3],
+        updated_at: new Date().toISOString(),
+      });
     }
-    if (invalidPlaceholder) {
-      message.textContent = `Unknown placeholder {{${invalidPlaceholder}}}. Use {{member_name}}, {{roles}}, {{role_count}}, or {{week_start}}.`;
+    if (!roleTemplates.length) {
+      message.textContent = "Add at least one chart role before saving role email settings.";
       return;
     }
     const button = roleEmailForm.querySelector('[type="submit"]');
     button.disabled = true;
     message.textContent = "Saving…";
+    const { error: templateSaveError } = await sb.from("leadership_role_email_templates").upsert(roleTemplates, { onConflict: "role_id" });
+    if (templateSaveError) {
+      message.textContent = `Could not save role email templates: ${templateSaveError.message}`;
+      button.disabled = false;
+      return;
+    }
     const { data, error: saveError } = await sb.from("leadership_role_email_settings").update({
       enabled: form.enabled.checked,
       initial_day: form.initial_day.value === "" ? null : Number(form.initial_day.value),
       initial_time: form.initial_time.value,
-      initial_subject: templates[0],
-      initial_body: templates[1],
       followup_enabled: form.followup_enabled.checked,
       followup_day: Number(form.followup_day.value),
       followup_time: form.followup_time.value,
-      followup_subject: templates[2],
-      followup_body: templates[3],
       updated_at: new Date().toISOString(),
     }).eq("id", 1).select("id").maybeSingle();
     message.textContent = saveError
-      ? `Could not save role email settings: ${saveError.message}`
-      : data ? "Role email settings saved." : "No role email settings were saved.";
+      ? `Role templates were saved, but role email settings could not be saved: ${saveError.message}`
+      : data ? "Role email settings and templates saved." : "Role templates were saved, but no role email settings were updated.";
     button.disabled = false;
   };
   const checkStatus = async () => {
